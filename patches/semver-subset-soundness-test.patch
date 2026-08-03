@@ -1,0 +1,108 @@
+diff --git a/test/ranges/subset.js b/test/ranges/subset.js
+index c6de357..1581c54 100644
+--- a/test/ranges/subset.js
++++ b/test/ranges/subset.js
+@@ -3,6 +3,8 @@
+ const t = require('tap')
+ const subset = require('../../ranges/subset.js')
+ const Range = require('../../classes/range')
++const satisfies = require('../../functions/satisfies.js')
++const validRange = require('../../ranges/valid.js')
+ 
+ // sub, dom, expect, [options]
+ const cases = [
+@@ -106,7 +108,7 @@ const cases = [
+   ['>2.0.0', '>=2.0.0', true],
+ ]
+ 
+-t.plan(cases.length + 1)
++t.plan(cases.length + 2)
+ cases.forEach(([sub, dom, expect, options]) => {
+   const msg = `${sub || "''"} ⊂ ${dom || "''"} = ${expect}` +
+     (options ? ' ' + Object.keys(options).join(',') : '')
+@@ -143,3 +145,85 @@ t.test('range should be subset of itself in obj or string mode', t => {
+   t.equal(subset(r, r4), true)
+   t.end()
+ })
++
++// Generative soundness check.
++//
++// The table above pins down specific known answers. This asserts the defining
++// property of subset() over a broad space of generated ranges:
++//
++//   subset(a, b) === true   =>   no version satisfies `a` but not `b`
++//
++// Only that direction is checked. subset() quantifies over all possible
++// versions while this walks a finite universe, so a `false` result can never be
++// refuted here -- but a `true` result can be, and a false-positive is the
++// dangerous direction: it tells a caller a range is contained when it is not.
++//
++// The generator is seeded, so a failure reproduces exactly and CI cannot flake.
++t.test('a true subset() result has no counterexample', t => {
++  // xorshift32 -- deterministic across platforms and node versions
++  let seed = 11
++  const rnd = () => {
++    seed ^= seed << 13
++    seed ^= seed >>> 17
++    seed ^= seed << 5
++    seed >>>= 0
++    return seed / 4294967296
++  }
++  const pick = a => a[Math.floor(rnd() * a.length)]
++
++  const versions = []
++  for (let major = 0; major <= 3; major++) {
++    for (let minor = 0; minor <= 2; minor++) {
++      for (let patch = 0; patch <= 2; patch++) {
++        versions.push(`${major}.${minor}.${patch}`)
++        for (const pre of ['alpha.0', 'beta.1', 'rc.2']) {
++          versions.push(`${major}.${minor}.${patch}-${pre}`)
++        }
++      }
++    }
++  }
++
++  const NUM = ['0', '1', '2', '3', 'x', '*']
++  // weighted so plain releases and prereleases both appear often
++  const PRE = ['', '', '', '-alpha.0', '-beta.1', '-rc.2']
++  const OPS = ['^', '~', '>=', '<=', '>', '<', '', '']
++
++  const simple = () =>
++    `${pick(OPS)}${pick(NUM)}.${pick(NUM)}.${pick(NUM)}${pick(PRE)}`
++
++  const makeRange = () => {
++    const r = rnd()
++    const out = r < 0.45 ? simple()
++      : r < 0.75 ? `${simple()} ${simple()}` // intersection
++      : `${simple()} || ${simple()}` // union
++    return validRange(out) === null ? null : out
++  }
++
++  const failures = []
++  for (const options of [{}, { includePrerelease: true }]) {
++    for (let i = 0; i < 5000 && failures.length < 5; i++) {
++      const sub = makeRange()
++      const dom = makeRange()
++      if (!sub || !dom || subset(sub, dom, options) !== true) {
++        continue
++      }
++      // first version in `sub` but not in `dom`, if any
++      const v = versions.find(ver =>
++        satisfies(ver, sub, options) && !satisfies(ver, dom, options))
++      if (v !== undefined) {
++        failures.push({ sub, dom, v, options })
++      }
++    }
++  }
++
++  for (const f of failures) {
++    const opts = f.options.includePrerelease ? ', { includePrerelease: true }' : ''
++    t.comment(
++      `subset(${JSON.stringify(f.sub)}, ${JSON.stringify(f.dom)}${opts}) ` +
++      `returned true, but ${f.v} satisfies the sub-range and not the super-range`
++    )
++  }
++
++  t.equal(failures.length, 0, 'no unsound subset() results')
++  t.end()
++})

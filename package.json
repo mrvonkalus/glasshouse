@@ -1,0 +1,20 @@
+{
+  "name": "glasshouse",
+  "version": "1.0.0",
+  "description": "Property-based and differential test harnesses that independently rediscovered three open defects in widely-used npm packages.",
+  "scripts": {
+    "verify": "node verify.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "diff": "^9.0.0",
+    "fast-json-patch": "^3.1.1",
+    "minimatch": "^10.2.6",
+    "picomatch": "^4.0.5",
+    "semver": "^7.8.5"
+  },
+  "private": false
+}
