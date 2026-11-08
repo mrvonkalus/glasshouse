@@ -3,7 +3,11 @@
   "version": "1.0.0",
   "description": "Property-based and differential test harnesses that independently rediscovered three open defects in widely-used npm packages.",
   "scripts": {
-    "verify": "node verify.js"
+    "build:middleware": "tsc -p tsconfig.json",
+    "glob:middleware": "npm run build:middleware --silent && node .build/harnesses/glob-middleware-drift.js",
+    "test:middleware": "npm run build:middleware --silent && node .build/test/glob-middleware-drift.test.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "verify": "node verify.js && npm run test:middleware"
   },
   "keywords": [],
   "author": "",
@@ -15,6 +19,10 @@
     "minimatch": "^10.2.6",
     "picomatch": "^4.0.5",
     "semver": "^7.8.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "typescript": "^5.9.3"
   },
   "private": false
 }

@@ -12,6 +12,13 @@ npm run verify
 Runs in a few seconds. Everything below reproduces exactly; every generator is
 a seeded xorshift32, so there is no "run it a few times and see."
 
+The downstream route-consistency projection is also available as a standalone
+Markdown report:
+
+```bash
+npm run --silent glob:middleware
+```
+
 ---
 
 ## Read this before anything else
@@ -49,6 +56,7 @@ they disagree, one of them is wrong.
 |---|---|---|
 | `harnesses/semver-subset.js` | property | 8 unsound `subset()` results, each with a witness version |
 | `harnesses/glob-brackets.js` | differential | 360 disagreements, 294 of them bracket negation |
+| `harnesses/glob-middleware-drift.ts` | downstream differential projection | 190 Type I and 104 Type II route-matching drifts; `{ posix: true }` resolves all 294 |
 | `harnesses/semver-invariants.js` | property | **clean** — 0 new findings |
 | `harnesses/jsdiff-roundtrip.js` | property | **clean** — 0 findings in 80,000 cases |
 
@@ -105,6 +113,46 @@ characters `!` or `a`", the inverse of the POSIX/bash meaning. Affects every
 position in a pattern, not only the leading one. `{ posix: true }` produces
 correct behaviour, which is why this is a contested default rather than a
 straightforward break — hence three open issues arguing about it.
+
+### Downstream route-matching consistency
+
+`glob-middleware-drift.ts` replays the bracket-negation witnesses in a layered
+architecture: minimatch is the policy-filter layer and picomatch is the
+router/static-resolver layer. It reads the generated witnesses directly from
+`glob-brackets.js`; there is no copied fixture list to fall out of sync.
+
+| Picomatch resolver mode | Agreement with minimatch policy | Type I | Type II | Total |
+|---|---:|---:|---:|---:|
+| default options | 0 | 190 | 104 | 294 |
+| `{ posix: true }` | 294 | 0 | 0 | 294 |
+
+The deterministic shrinker groups witnesses by path-segment count and the
+positions containing `[!…]`, producing 17 structural groups. The shortest
+counterexample in each drift direction has a combined pattern/input length of
+five:
+
+| Type | Pattern | Input | minimatch RegExp | picomatch default RegExp | picomatch POSIX RegExp |
+|---|---|---|---|---|---|
+| I | `[!a]` | `b` | `^(?!\.)[^a]$` | `^(?:(?:\[!a\]\|[!a])\/?)$` | `^(?:[^a/]\/?)$` |
+| II | `[!a]` | `a` | `^(?!\.)[^a]$` | `^(?:(?:\[!a\]\|[!a])\/?)$` | `^(?:[^a/]\/?)$` |
+
+The compiler output makes the root cause visible: minimatch and picomatch
+POSIX mode emit a negated character class, while picomatch default mode treats
+`!` as a literal class member. The 294/294 convergence result is exhaustive for
+this deterministic generated witness set; it is not a proof over every possible
+glob pattern and candidate string.
+
+- **Type I:** the minimatch policy matches, but the picomatch resolver rejects.
+- **Type II:** the minimatch policy does not match a restricted-route rule,
+  while the picomatch resolver matches the route.
+
+The Type II model is a potential policy-enforcement gap in the specified
+architecture, not a claim that every use of picomatch is exploitable. The
+zero-framework regression suite uses only `node:test` and `node:assert`:
+
+```bash
+npm run test:middleware
+```
 
 ---
 
