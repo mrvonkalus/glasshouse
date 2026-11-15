@@ -20,6 +20,24 @@ type MatrixRow = {
   typeII: number
   total: number
 }
+type SharedOptionMatrixRow = {
+  id: string
+  label: string
+  sharedOptions: Record<string, boolean> | 'from-witness'
+  defaultMode: {
+    agreement: number
+    typeI: number
+    typeII: number
+    regexConsistent: number
+  }
+  posixMode: {
+    agreement: number
+    typeI: number
+    typeII: number
+    regexConsistent: number
+  }
+  total: number
+}
 type CompiledWitness = {
   pattern: string
   candidatePath: string
@@ -33,8 +51,17 @@ type CompiledWitness = {
   minimatchRegex: { source: string; flags: string }
   picomatchDefaultRegex: { source: string; flags: string }
   picomatchPosixRegex: { source: string; flags: string }
+  shrink: {
+    seedPattern: string
+    seedCandidatePath: string
+    seedScore: number
+    steps: number
+    minimal: boolean
+  }
 }
 type DriftReport = {
+  name: string
+  target: string
   checked: number
   sourceDisagreements: number
   bracketWitnesses: number
@@ -43,6 +70,37 @@ type DriftReport = {
     posixDrift: DriftType
   }>
   matrix: MatrixRow[]
+  sharedOptionsMatrix: SharedOptionMatrixRow[]
+  disagreementPartition: {
+    totalDisagreements: number
+    bracketNegation: {
+      count: number
+      resolvedByPosix: number
+      resolvedByStrictSlashes: number
+    }
+    nonBracketDialect: {
+      count: number
+      trailingGlobstarCount: number
+      resolvedByPosix: number
+      resolvedByStrictSlashes: number
+    }
+    combinedPosixAndStrictSlashesAgreement: number
+  }
+  shrinkSummary: {
+    totalWitnesses: number
+    verifiedMinimal: number
+    preservedClassification: number
+    preservedOptions: number
+    strictlyReduced: number
+    maxSteps: number
+    normalForms: Array<{
+      driftType: Exclude<DriftType, null>
+      pattern: string
+      candidatePath: string
+      dot: boolean
+      count: number
+    }>
+  }
   minimalWitnesses: CompiledWitness[]
   structuralMinima: Array<{
     structuralClass: string
@@ -56,10 +114,17 @@ const picomatch = require('picomatch') as Picomatch
 const {
   buildReport,
   classifyDrift,
+  renderJson,
+  renderMarkdown,
   structuralPatternClass,
 } = require('../harnesses/glob-middleware-drift') as {
   buildReport: () => DriftReport
   classifyDrift: (policy: boolean, resolver: boolean) => DriftType
+  renderJson: (
+    report: DriftReport,
+    options?: { includeWitnesses?: boolean }
+  ) => string
+  renderMarkdown: (report: DriftReport) => string
   structuralPatternClass: (pattern: string) => string
 }
 
@@ -132,8 +197,88 @@ test('the options matrix shows posix mode resolving every bracket witness', () =
   ])
 })
 
-test('selects the shortest deterministic witness for each drift direction', () => {
-  const { minimalWitnesses } = buildReport()
+test('shared-options matrix converges under posix across all comparable flag profiles', () => {
+  const { sharedOptionsMatrix, bracketWitnesses } = buildReport()
+  assert.equal(sharedOptionsMatrix.length, 9)
+
+  for (const row of sharedOptionsMatrix) {
+    assert.equal(row.total, bracketWitnesses)
+    assert.equal(
+      row.defaultMode.agreement + row.defaultMode.typeI + row.defaultMode.typeII,
+      bracketWitnesses
+    )
+    assert.equal(row.posixMode.agreement, bracketWitnesses)
+    assert.equal(row.posixMode.typeI, 0)
+    assert.equal(row.posixMode.typeII, 0)
+
+    if (row.id === 'dot:false') {
+      assert.equal(row.defaultMode.regexConsistent, 293)
+      assert.equal(row.posixMode.regexConsistent, 293)
+    } else {
+      assert.equal(row.defaultMode.regexConsistent, bracketWitnesses)
+      assert.equal(row.posixMode.regexConsistent, bracketWitnesses)
+    }
+  }
+})
+
+test('partitions all 360 source disagreements into [! bracket negation and trailing /** dialect', () => {
+  const { disagreementPartition } = buildReport()
+
+  assert.deepEqual(disagreementPartition, {
+    totalDisagreements: 360,
+    bracketNegation: {
+      count: 294,
+      resolvedByPosix: 294,
+      resolvedByStrictSlashes: 4,
+    },
+    nonBracketDialect: {
+      count: 66,
+      trailingGlobstarCount: 66,
+      resolvedByPosix: 0,
+      resolvedByStrictSlashes: 66,
+    },
+    combinedPosixAndStrictSlashesAgreement: 360,
+  })
+})
+
+test('shrinks every bracket witness to its verified 1-minimal normal form', () => {
+  const { minimalWitnesses, shrinkSummary } = buildReport()
+
+  assert.equal(shrinkSummary.totalWitnesses, 294)
+  assert.equal(shrinkSummary.verifiedMinimal, 294)
+  assert.equal(shrinkSummary.preservedClassification, 294)
+  assert.equal(shrinkSummary.preservedOptions, 294)
+  assert.ok(shrinkSummary.strictlyReduced >= 288)
+  assert.deepEqual(shrinkSummary.normalForms, [
+    {
+      driftType: 'type-i',
+      pattern: '[!a]',
+      candidatePath: 'b',
+      dot: false,
+      count: 90,
+    },
+    {
+      driftType: 'type-i',
+      pattern: '[!a]',
+      candidatePath: 'b',
+      dot: true,
+      count: 100,
+    },
+    {
+      driftType: 'type-ii',
+      pattern: '[!a]',
+      candidatePath: 'a',
+      dot: false,
+      count: 44,
+    },
+    {
+      driftType: 'type-ii',
+      pattern: '[!a]',
+      candidatePath: 'a',
+      dot: true,
+      count: 60,
+    },
+  ])
 
   assert.deepEqual(
     minimalWitnesses.map(witness => ({
@@ -142,6 +287,7 @@ test('selects the shortest deterministic witness for each drift direction', () =
       candidatePath: witness.candidatePath,
       dot: witness.dot,
       score: witness.score,
+      minimal: witness.shrink.minimal,
     })),
     [
       {
@@ -150,6 +296,7 @@ test('selects the shortest deterministic witness for each drift direction', () =
         candidatePath: 'b',
         dot: false,
         score: 5,
+        minimal: true,
       },
       {
         type: 'type-ii',
@@ -157,6 +304,7 @@ test('selects the shortest deterministic witness for each drift direction', () =
         candidatePath: 'a',
         dot: false,
         score: 5,
+        minimal: true,
       },
     ]
   )
@@ -179,7 +327,7 @@ test('captures the exact compiler output for the minimal bracket pattern', () =>
   }
 })
 
-test('groups witnesses by negated-class placement and minimizes each group', () => {
+test('groups witnesses by negated-class placement and shrinks each structural group', () => {
   const { structuralMinima, bracketWitnesses } = buildReport()
 
   assert.equal(structuralMinima.length, 17)
@@ -191,6 +339,7 @@ test('groups witnesses by negated-class placement and minimizes each group', () 
     structuralPatternClass('[!a]/literal/[!b]'),
     '3 segments; [! at 1, 3]'
   )
+  assert.ok(structuralMinima.every(group => group.witness.shrink.minimal))
 
   const oneSegment = structuralMinima.filter(
     group => group.structuralClass === '1 segment; [! at 1]'
@@ -223,6 +372,27 @@ test('compiled structural minima replay their recorded matcher outcomes', () => 
       witness.resolverPosixMatches
     )
   }
+})
+
+test('exports compact JSON and Markdown artifacts from the same report model', () => {
+  const report = buildReport()
+  const compact = JSON.parse(renderJson(report)) as Record<string, unknown>
+  const full = JSON.parse(
+    renderJson(report, { includeWitnesses: true })
+  ) as Record<string, unknown>
+  const markdown = renderMarkdown(report)
+
+  assert.equal('witnesses' in compact, false)
+  assert.equal(compact.checked, report.checked)
+  assert.equal(compact.sourceDisagreements, report.sourceDisagreements)
+  assert.equal(compact.bracketWitnesses, report.bracketWitnesses)
+  assert.deepEqual(compact.matrix, report.matrix)
+  assert.deepEqual(compact.sharedOptionsMatrix, report.sharedOptionsMatrix)
+  assert.deepEqual(compact.disagreementPartition, report.disagreementPartition)
+  assert.deepEqual(compact.shrinkSummary, report.shrinkSummary)
+  assert.equal(Array.isArray(full.witnesses), true)
+  assert.match(markdown, /## Shared-options matrix \(comparable flags\)/)
+  assert.match(markdown, /360\/360 agreement across the generated differential set/)
 })
 
 test('report generation is deterministic', () => {

@@ -18,11 +18,12 @@ The demo replays 40,000 seeded glob cases, shows the shortest observed Type I
 and Type II route-matching witnesses, exposes the compiled regular expressions,
 and verifies the `{ posix: true }` convergence result from live harness data.
 
-For the complete harness suite and detailed Markdown report:
+For the complete harness suite and detailed Markdown or compact JSON report:
 
 ```bash
 npm run verify
 npm run --silent glob:middleware
+npm run --silent glob:middleware:json
 ```
 
 Every generator uses a seeded xorshift32. Results reproduce exactly instead of
@@ -137,10 +138,13 @@ router/static-resolver layer. It reads the generated witnesses directly from
 | default options | 0 | 190 | 104 | 294 |
 | `{ posix: true }` | 294 | 0 | 0 | 294 |
 
-The deterministic selector groups witnesses by path-segment count and the
-positions containing `[!…]`, producing 17 structural groups. The shortest
-observed witness in each drift direction has a combined pattern/input length
-of five:
+A deterministic, predicate-preserving shrinker reduces every generated
+bracket-negation witness while holding its drift classification, POSIX
+convergence, and matcher option state invariant. Across all 294 generated
+bracket-negation witnesses (`190` Type I and `104` Type II), reduction reaches
+the same 1-minimal canonical pattern (`[!a]`, combined length five), and each
+of the 17 structural placement groups is likewise shrunk within its structural
+class:
 
 | Type | Pattern | Input | minimatch RegExp | picomatch default RegExp | picomatch POSIX RegExp |
 |---|---|---|---|---|---|
@@ -149,9 +153,13 @@ of five:
 
 The compiler output makes the root cause visible: minimatch and picomatch
 POSIX mode emit a negated character class, while picomatch default mode treats
-`!` as a literal class member. The 294/294 convergence result is exhaustive for
-this deterministic generated witness set; it is not a proof over every possible
-glob pattern and candidate string.
+`!` as a literal class member. Sweeping all six genuinely comparable shared
+flags (`dot`, `nocase`, `nobrace`, `noglobstar`, `noext`, `nonegate`) preserves
+`294/294` agreement under `{ posix: true }`, while picomatch `{ strictSlashes: true }`
+resolves all `66/66` remaining trailing-`/**` dialect disagreements (`360/360`
+combined). Both results are exhaustive for this deterministic generated witness
+set; neither is a universal proof over every possible glob pattern and
+candidate string.
 
 - **Type I:** the minimatch policy matches, but the picomatch resolver rejects.
 - **Type II:** the minimatch policy does not match a restricted-route rule,

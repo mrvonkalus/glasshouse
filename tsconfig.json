@@ -18,6 +18,7 @@
     "harnesses/glob-brackets.js",
     "harnesses/glob-middleware-drift.ts",
     "lib/rand.js",
+    "lib/**/*.ts",
     "test/**/*.ts"
   ]
 }
