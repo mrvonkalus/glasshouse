@@ -2,10 +2,11 @@
 
 // minimatch vs picomatch -- differential test.
 //
-// Two independent implementations of the same glob spec. When they disagree,
-// one of them is wrong; no invented oracle is required. That is the advantage
-// of differential testing over property testing: you cannot get the rule wrong,
-// because you never write one down.
+// Two independent glob implementations over the same generated inputs. A
+// disagreement is a triage signal, not automatic proof that either library is
+// wrong: documented defaults and dialect differences still require
+// adjudication. The advantage over a hand-written property is narrower but
+// useful -- the harness does not invent a behavioral oracle for each input.
 //
 // Paths deliberately contain no empty segments. Empty segments produce trailing
 // slashes, double slashes, and empty paths, where these two libraries diverge by

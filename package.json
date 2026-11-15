@@ -1,16 +1,24 @@
 {
   "name": "glasshouse",
   "version": "1.0.0",
-  "description": "Property-based and differential test harnesses that independently rediscovered three open defects in widely-used npm packages.",
+  "description": "Deterministic property and differential test harnesses for finding and explaining semantic drift.",
   "scripts": {
-    "build:middleware": "tsc -p tsconfig.json",
-    "glob:middleware": "npm run build:middleware --silent && node .build/harnesses/glob-middleware-drift.js",
-    "test:middleware": "npm run build:middleware --silent && node .build/test/glob-middleware-drift.test.js",
+    "build": "tsc -p tsconfig.json",
+    "build:middleware": "npm run build --silent",
+    "demo": "npm run build --silent && node .build/demo/glob-route-drift.js",
+    "glob:middleware": "npm run build --silent && node .build/harnesses/glob-middleware-drift.js",
+    "test": "npm run build --silent && node --test .build/test/*.test.js",
+    "test:middleware": "npm test --silent",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "verify": "node verify.js && npm run test:middleware"
+    "verify": "node verify.js && npm test --silent"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "differential-testing",
+    "property-testing",
+    "security-research",
+    "software-testing"
+  ],
+  "author": "Kristopher Renfro",
   "license": "MIT",
   "type": "commonjs",
   "dependencies": {
