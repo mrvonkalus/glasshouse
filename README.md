@@ -1,42 +1,51 @@
 # glasshouse
 
-Property-based and differential test harnesses that independently rediscovered
-three real, currently-open defects in npm packages drawing roughly **1.3 billion
-weekly downloads** — in a single evening, on 2026-08-03.
+[![verify](https://github.com/mrvonkalus/glasshouse/actions/workflows/verify.yml/badge.svg)](https://github.com/mrvonkalus/glasshouse/actions/workflows/verify.yml)
+
+Glasshouse is a deterministic testing lab for finding and explaining semantic
+drift between widely used software components. It generates reproducible inputs,
+compares independent implementations or checks invariants, preserves null
+results, and reduces disagreements to evidence a maintainer can replay.
+
+## Thirty-second demo
 
 ```bash
-npm install
-npm run verify
+npm ci
+npm run demo
 ```
 
-Runs in a few seconds. Everything below reproduces exactly; every generator is
-a seeded xorshift32, so there is no "run it a few times and see."
+The demo replays 40,000 seeded glob cases, shows the shortest observed Type I
+and Type II route-matching witnesses, exposes the compiled regular expressions,
+and verifies the `{ posix: true }` convergence result from live harness data.
 
-The downstream route-consistency projection is also available as a standalone
-Markdown report:
+For the complete harness suite and detailed Markdown report:
 
 ```bash
+npm run verify
 npm run --silent glob:middleware
 ```
 
----
+Every generator uses a seeded xorshift32. Results reproduce exactly instead of
+depending on a lucky fuzzing run.
 
-## Read this before anything else
+## Evidence status
 
-**None of these findings are novel. Every one was reported by someone else
-first.** The issue trackers were checked *after* each find, and in all three
-cases somebody had already been there:
+**None of the findings are claimed as novel.** Tracker searches happened after
+the independent finds. The repository currently contains one open correctness
+defect, one open/contested matcher behavior, one adjudicated semver behavior,
+and two clean harnesses:
 
-| Defect | Found here | Already reported |
+| Observation | Status | Upstream |
 |---|---|---|
-| `semver.subset()` returns `true` for provably disjoint ranges | 2026-08-03 | [node-semver PR #889](https://github.com/npm/node-semver/pull/889), 2026-07-23, **open** |
-| `picomatch` inverts POSIX bracket negation `[!a]` by default | 2026-08-03 | [picomatch #187](https://github.com/micromatch/picomatch/issues/187), also [#180](https://github.com/micromatch/picomatch/issues/180), [#188](https://github.com/micromatch/picomatch/issues/188), **all open** |
-| `semver` `ltr` and `gtr` both `true` on a non-empty range | 2026-08-03 | [node-semver #328](https://github.com/npm/node-semver/issues/328), closed 2023 as expected prerelease behaviour |
+| `semver.subset()` returns `true` for provably disjoint ranges | Open correctness defect | [node-semver PR #889](https://github.com/npm/node-semver/pull/889) |
+| Picomatch default and POSIX bracket negation diverge | Open, contested default behavior | [picomatch #187](https://github.com/micromatch/picomatch/issues/187), [#180](https://github.com/micromatch/picomatch/issues/180), [#188](https://github.com/micromatch/picomatch/issues/188) |
+| `semver` `ltr` and `gtr` both return `true` for an excluded prerelease | Expected behavior | [node-semver #328](https://github.com/npm/node-semver/issues/328) |
+| Semver range invariants | Clean | No new finding |
+| jsdiff round-trip invariants | Clean across 80,000 generated cases | No finding |
 
-If you are here to evaluate whether the method works, the fact that it landed on
-three genuine defects in three attempts is the signal. The fact that it was
-beaten to all three is the honest footnote, and it is stated up front rather
-than buried.
+The signal is not a novelty claim. It is that small deterministic harnesses
+independently reached known defects, distinguished documented differences from
+defects, retained their own testing mistakes, and produced replayable witnesses.
 
 ---
 
@@ -48,9 +57,11 @@ Two techniques, and the difference between them matters.
 inputs trying to break it. The risk is that *you can state the rule wrong*, and
 then you get a pile of confident nonsense. That happened here twice; see below.
 
-**Differential testing** — run two independent implementations of the same spec
-and compare. You cannot state the rule wrong because you never state one. When
-they disagree, one of them is wrong.
+**Differential testing** — run independent implementations over the same inputs
+and compare. This removes the need to hand-code a behavioral oracle, but a
+disagreement is a signal rather than automatic proof of a defect: specifications,
+defaults, and documented semantics still have to be adjudicated. The 66
+non-bracket glob disagreements below are retained for exactly that reason.
 
 | Harness | Technique | Result |
 |---|---|---|
@@ -126,10 +137,10 @@ router/static-resolver layer. It reads the generated witnesses directly from
 | default options | 0 | 190 | 104 | 294 |
 | `{ posix: true }` | 294 | 0 | 0 | 294 |
 
-The deterministic shrinker groups witnesses by path-segment count and the
+The deterministic selector groups witnesses by path-segment count and the
 positions containing `[!…]`, producing 17 structural groups. The shortest
-counterexample in each drift direction has a combined pattern/input length of
-five:
+observed witness in each drift direction has a combined pattern/input length
+of five:
 
 | Type | Pattern | Input | minimatch RegExp | picomatch default RegExp | picomatch POSIX RegExp |
 |---|---|---|---|---|---|
@@ -200,12 +211,13 @@ Both are kept and both run in `npm run verify`. Anyone can publish hits.
 
 ## Provenance
 
-The fuzzing, analysis, patches and this README were produced by an AI agent
-(Claude) working under my direction, over one session on 2026-08-03. Rather than
-ask you to take that on trust: every result here is reproducible with
-`npm run verify`, every generator is seeded, and the upstream links are right
-there to check. The defects belong to the people who reported them first, named
-and linked above.
+The original fuzzing, analysis, and patches were produced by Claude working
+under my direction on 2026-08-03. The middleware projection, compiler X-ray,
+TypeScript suite, and demo were developed with Codex, with Gemini contributing
+research and sequencing ideas. Rather than ask you to trust the agents or the
+narrative: every result is reproducible with `npm run verify`, every generator
+is seeded, and the upstream links are available for adjudication. The defects
+belong to the people who reported them first, named and linked above.
 
 MIT licensed. Nothing here is a security vulnerability; all three are correctness
 defects, all three are already public, and no disclosure embargo applies.
