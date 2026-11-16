@@ -185,10 +185,33 @@ type ModeOutcomeSummary = {
   regexConsistent: number
 }
 
+type BaseDotState = 'from-witness' | boolean
+
+type EffectiveOptionDescriptor = {
+  dot: BaseDotState
+  nocase: boolean
+  nobrace: boolean
+  noglobstar: boolean
+  noext: boolean
+  nonegate: boolean
+}
+
+type SharedOptionProfile = {
+  id: string
+  label: string
+  baseDot: BaseDotState
+  optionDelta: SharedMatcherOptions
+  effectiveOptions: EffectiveOptionDescriptor
+}
+
 type SharedOptionMatrixRow = {
   id: string
   label: string
-  sharedOptions: SharedMatcherOptions | 'from-witness'
+  baseDot: BaseDotState
+  optionDelta: SharedMatcherOptions
+  effectiveOptions: EffectiveOptionDescriptor
+  affectedWitnesses: number
+  corpusActive: boolean
   defaultMode: ModeOutcomeSummary
   posixMode: ModeOutcomeSummary
   total: number
@@ -219,6 +242,7 @@ type NormalFormSummary = {
 }
 
 type ShrinkSummary = {
+  minimalityScope: 'reducer-neighborhood'
   totalWitnesses: number
   verifiedMinimal: number
   preservedClassification: number
@@ -256,80 +280,99 @@ const { run: runGlobBrackets } = require('./glob-brackets') as {
   run: (options?: GeneratorOptions) => SourceResult
 }
 
-const SHARED_OPTION_PROFILES: ReadonlyArray<{
-  id: string
-  label: string
-  sharedOptions: SharedMatcherOptions | 'from-witness'
-  resolveOptions: (witness: RouteWitness) => SharedMatcherOptions
-}> = [
-  {
-    id: 'witness-recorded',
-    label: 'witness dot state',
-    sharedOptions: 'from-witness',
-    resolveOptions: witness => ({ dot: witness.dot }),
-  },
-  {
-    id: 'dot:false',
-    label: '{ dot: false }',
-    sharedOptions: { dot: false },
-    resolveOptions: () => ({ dot: false }),
-  },
-  {
-    id: 'dot:true',
-    label: '{ dot: true }',
-    sharedOptions: { dot: true },
-    resolveOptions: () => ({ dot: true }),
-  },
-  {
-    id: 'nocase:true',
-    label: '{ nocase: true }',
-    sharedOptions: { nocase: true },
-    resolveOptions: witness => ({ dot: witness.dot, nocase: true }),
-  },
-  {
-    id: 'nobrace:true',
-    label: '{ nobrace: true }',
-    sharedOptions: { nobrace: true },
-    resolveOptions: witness => ({ dot: witness.dot, nobrace: true }),
-  },
-  {
-    id: 'noglobstar:true',
-    label: '{ noglobstar: true }',
-    sharedOptions: { noglobstar: true },
-    resolveOptions: witness => ({ dot: witness.dot, noglobstar: true }),
-  },
-  {
-    id: 'noext:true',
-    label: '{ noext: true }',
-    sharedOptions: { noext: true },
-    resolveOptions: witness => ({ dot: witness.dot, noext: true }),
-  },
-  {
-    id: 'nonegate:true',
-    label: '{ nonegate: true }',
-    sharedOptions: { nonegate: true },
-    resolveOptions: witness => ({ dot: witness.dot, nonegate: true }),
-  },
-  {
-    id: 'all-shared:true',
-    label: 'all 6 shared flags true',
-    sharedOptions: {
-      dot: true,
-      nocase: true,
-      nobrace: true,
-      noglobstar: true,
-      noext: true,
-      nonegate: true,
-    },
-    resolveOptions: () => ({
-      dot: true,
-      nocase: true,
-      nobrace: true,
-      noglobstar: true,
-      noext: true,
-      nonegate: true,
-    }),
-  },
+function buildEffectiveOptionDescriptor (
+  baseDot: BaseDotState,
+  optionDelta: SharedMatcherOptions
+): EffectiveOptionDescriptor {
+  return {
+    dot: optionDelta.dot !== undefined ? optionDelta.dot : baseDot,
+    nocase: Boolean(optionDelta.nocase),
+    nobrace: Boolean(optionDelta.nobrace),
+    noglobstar: Boolean(optionDelta.noglobstar),
+    noext: Boolean(optionDelta.noext),
+    nonegate: Boolean(optionDelta.nonegate),
+  }
+}
+
+function resolveEffectiveOptions (
+  effectiveOptions: EffectiveOptionDescriptor,
+  witness: { dot: boolean }
+): SharedMatcherOptions {
+  return {
+    dot:
+      effectiveOptions.dot === 'from-witness'
+        ? witness.dot
+        : effectiveOptions.dot,
+    nocase: effectiveOptions.nocase,
+    nobrace: effectiveOptions.nobrace,
+    noglobstar: effectiveOptions.noglobstar,
+    noext: effectiveOptions.noext,
+    nonegate: effectiveOptions.nonegate,
+  }
+}
+
+function defineOptionProfile (
+  id: string,
+  label: string,
+  baseDot: BaseDotState,
+  optionDelta: SharedMatcherOptions
+): SharedOptionProfile {
+  return {
+    id,
+    label,
+    baseDot,
+    optionDelta: { ...optionDelta },
+    effectiveOptions: buildEffectiveOptionDescriptor(baseDot, optionDelta),
+  }
+}
+
+const SHARED_OPTION_PROFILES: ReadonlyArray<SharedOptionProfile> = [
+  defineOptionProfile(
+    'witness-recorded',
+    '{ dot: witness.dot } (recorded baseline)',
+    'from-witness',
+    {}
+  ),
+  defineOptionProfile('dot:false', '{ dot: false }', false, { dot: false }),
+  defineOptionProfile('dot:true', '{ dot: true }', true, { dot: true }),
+  defineOptionProfile(
+    'nocase:true',
+    '{ dot: witness.dot, nocase: true }',
+    'from-witness',
+    { nocase: true }
+  ),
+  defineOptionProfile(
+    'nobrace:true',
+    '{ dot: witness.dot, nobrace: true }',
+    'from-witness',
+    { nobrace: true }
+  ),
+  defineOptionProfile(
+    'noglobstar:true',
+    '{ dot: witness.dot, noglobstar: true }',
+    'from-witness',
+    { noglobstar: true }
+  ),
+  defineOptionProfile(
+    'noext:true',
+    '{ dot: witness.dot, noext: true }',
+    'from-witness',
+    { noext: true }
+  ),
+  defineOptionProfile(
+    'nonegate:true',
+    '{ dot: witness.dot, nonegate: true }',
+    'from-witness',
+    { nonegate: true }
+  ),
+  defineOptionProfile('all-shared:true', 'all 6 shared flags true', true, {
+    dot: true,
+    nocase: true,
+    nobrace: true,
+    noglobstar: true,
+    noext: true,
+    nonegate: true,
+  }),
 ]
 
 function compareText (left: string, right: string): number {
@@ -520,6 +563,7 @@ function shrinkAllWitnesses (witnesses: RouteWitness[]): {
   return {
     minimalWitnesses,
     shrinkSummary: {
+      minimalityScope: 'reducer-neighborhood',
       totalWitnesses: witnesses.length,
       verifiedMinimal,
       preservedClassification: reduced.length,
@@ -664,9 +708,10 @@ function evaluateSharedOptionMatrix (
       typeII: 0,
       regexConsistent: 0,
     }
+    let affectedWitnesses = 0
 
     for (const witness of witnesses) {
-      const shared = profile.resolveOptions(witness)
+      const shared = resolveEffectiveOptions(profile.effectiveOptions, witness)
       const evaluated = evaluateWitness({
         pattern: witness.pattern,
         candidatePath: witness.candidatePath,
@@ -676,6 +721,14 @@ function evaluateSharedOptionMatrix (
         throw new Error(
           `shared option profile ${profile.id} failed to evaluate ${witness.pattern}`
         )
+      }
+
+      if (
+        evaluated.policyMatches !== witness.policyMatches ||
+        evaluated.resolverDefaultMatches !== witness.resolverDefaultMatches ||
+        evaluated.resolverPosixMatches !== witness.resolverPosixMatches
+      ) {
+        affectedWitnesses++
       }
 
       if (evaluated.defaultDrift === null) defaultMode.agreement++
@@ -697,10 +750,11 @@ function evaluateSharedOptionMatrix (
     return {
       id: profile.id,
       label: profile.label,
-      sharedOptions:
-        profile.sharedOptions === 'from-witness'
-          ? 'from-witness'
-          : { ...profile.sharedOptions },
+      baseDot: profile.baseDot,
+      optionDelta: { ...profile.optionDelta },
+      effectiveOptions: { ...profile.effectiveOptions },
+      affectedWitnesses,
+      corpusActive: affectedWitnesses > 0,
       defaultMode,
       posixMode,
       total: witnesses.length,
@@ -823,7 +877,8 @@ function renderMarkdown (report: DriftReport): string {
       `${partition.nonBracketDialect.count} documented trailing-\`/**\` dialect)`,
     `- Bracket-negation witnesses analyzed: ${report.bracketWitnesses}`,
     `- Predicate-preserving shrink verification: ${shrink.verifiedMinimal}/${shrink.totalWitnesses} ` +
-      `1-minimal (${shrink.strictlyReduced} reduced, max ${shrink.maxSteps} steps)`,
+      `reducer-canonical fixed points, 1-minimal relative to this reducer's candidate neighborhood ` +
+      `(${shrink.strictlyReduced} reduced, max ${shrink.maxSteps} steps)`,
     '',
     '| Picomatch resolver mode | Agreement with minimatch policy | Type I | Type II | Total |',
     '|---|---:|---:|---:|---:|',
@@ -837,14 +892,26 @@ function renderMarkdown (report: DriftReport): string {
     '',
     '## Shared-options matrix (comparable flags)',
     '',
-    '| Shared option profile | Default agree | Default Type I | Default Type II | POSIX agree | Regex parity (default / POSIX) |',
-    '|---|---:|---:|---:|---:|---:|',
+    '| Effective shared options | Affected witnesses | Default agree | Default Type I | Default Type II | POSIX agree | Regex parity (default / POSIX) |',
+    '|---|---:|---:|---:|---:|---:|---:|',
     ...report.sharedOptionsMatrix.map(row =>
-      `| ${code(row.label)} | ${row.defaultMode.agreement} | ` +
+      `| ${code(row.label)} | ${row.affectedWitnesses}/${row.total} | ${row.defaultMode.agreement} | ` +
       `${row.defaultMode.typeI} | ${row.defaultMode.typeII} | ` +
       `${row.posixMode.agreement}/${row.total} | ` +
       `${row.defaultMode.regexConsistent}/${row.total} · ${row.posixMode.regexConsistent}/${row.total} |`
     ),
+    '',
+    '`Affected witnesses` counts generated bracket-negation witnesses whose runtime',
+    'match decisions (`minimatch`, default `picomatch`, or POSIX `picomatch`) change',
+    'relative to the recorded `{ dot: witness.dot }` baseline. On this seeded corpus,',
+    '`{ dot: false }`, `nobrace: true`, `noglobstar: true`, and `all 6 shared flags true`',
+    'actively alter match decisions, whereas `{ dot: true }`, `nocase: true`,',
+    '`noext: true`, and `nonegate: true` produce `0/294` decision changes because',
+    '`glob-brackets.js` emits lowercase segments without extglobs or leading `!`',
+    'negation (and no `dot: false` witness flips under `dot: true`). Those `0/294`',
+    'rows are non-regression checks on this corpus rather than behavioral coverage',
+    'of uppercase, extglob, or leading-negation interactions (covered on targeted',
+    'witnesses in `test/glob-shrink.test.ts`).',
     '',
     '## Disagreement partition across all 360 differential findings',
     '',
@@ -858,7 +925,7 @@ function renderMarkdown (report: DriftReport): string {
     `- Combined picomatch ${code('{ posix: true, strictSlashes: true }')}: ` +
       `${partition.combinedPosixAndStrictSlashesAgreement}/${partition.totalDisagreements} agreement across the generated differential set.`,
     '',
-    '## Minimal compiler witnesses (predicate-preserving shrink)',
+    '## Reducer-canonical compiler witnesses (predicate-preserving shrink)',
     '',
     '| Type | Pattern | Input | minimatch RegExp | picomatch default RegExp | picomatch POSIX RegExp |',
     '|---|---|---|---|---|---|',
@@ -870,12 +937,16 @@ function renderMarkdown (report: DriftReport): string {
       `${code(witness.picomatchPosixRegex.source)} |`
     ),
     '',
-    'Every generated bracket-negation witness shrinks under the classification-',
-    'and option-preserving predicate to `[!a]` (`b` for Type I, `a` for Type II).',
-    'Minimatch and picomatch POSIX mode compile `[!a]` to a negated character',
-    'class; picomatch default mode emits `!` as a literal class member.',
+    'Every generated bracket-negation witness reduces under the classification-',
+    'and option-preserving predicate to the reducer-canonical pattern `[!a]`',
+    '(`b` for Type I, `a` for Type II). Because the reducer directly proposes',
+    '`[!a]`, `a`, and `b` alongside segment and character deletions, this fixed',
+    'point is 1-minimal relative to this reducer\'s candidate neighborhood rather',
+    'than a proof of unconstrained global minimality. Minimatch and picomatch POSIX',
+    'mode compile `[!a]` to a negated character class; picomatch default mode emits',
+    '`!` as a literal class member.',
     '',
-    '## Structural minima (shrunk within structural class)',
+    '## Structural minima (reducer-canonical within structural class)',
     '',
     '| Type | Structural class | N | Pattern | Input | minimatch RegExp | picomatch default RegExp | picomatch POSIX RegExp |',
     '|---|---|---:|---|---|---|---|---|',
@@ -890,8 +961,10 @@ function renderMarkdown (report: DriftReport): string {
     ),
     '',
     '> The 294/294 POSIX convergence result and 360/360 dialect partition cover',
-    '> this deterministic generated witness set. They are strong compiler-level',
-    '> evidence, not a proof over every possible glob pattern and candidate string.',
+    '> this deterministic generated witness set, and witness minimality is certified',
+    '> relative to this reducer\'s candidate neighborhood (not globally minimal over',
+    '> all strings). Together they are strong compiler-level evidence, not a proof',
+    '> over every possible glob pattern and candidate string.',
     '>',
     '> The Type II label describes the specified layered architecture. It is a',
     '> consistency/policy-enforcement risk, not by itself a claim that either',
@@ -935,6 +1008,7 @@ module.exports = {
   partitionSourceDisagreements,
   renderJson,
   renderMarkdown,
+  resolveEffectiveOptions,
   shrinkRouteWitness,
   structuralPatternClass,
 }

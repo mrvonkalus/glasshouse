@@ -248,6 +248,31 @@ test('structure-preserving shrink simplifies wildcards without crossing structur
   )
 })
 
+test('preserveStructure precondition requires structuralClassifier in both shrinkWitness and isOneMinimal', () => {
+  const structuralMinimum: ShrinkableWitness = {
+    pattern: 'a/[!a]/[!a]',
+    candidatePath: 'a/a/a',
+    options: { dot: false, noglobstar: true },
+  }
+
+  assert.equal(isOneMinimal(structuralMinimum), false)
+  assert.equal(
+    isOneMinimal(structuralMinimum, {
+      preserveStructure: true,
+      structuralClassifier: structuralPatternClass,
+    }),
+    true
+  )
+  assert.throws(
+    () => shrinkWitness(structuralMinimum, { preserveStructure: true }),
+    /preserveStructure requires a structuralClassifier function/
+  )
+  assert.throws(
+    () => isOneMinimal(structuralMinimum, { preserveStructure: true }),
+    /preserveStructure requires a structuralClassifier function/
+  )
+})
+
 test('unescaped bracket-negation detector distinguishes escaped and degenerate brackets', () => {
   assert.equal(hasUnescapedBracketNegation('[!a]'), true)
   assert.equal(hasUnescapedBracketNegation('\\\\[!a]'), true)

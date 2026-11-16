@@ -142,9 +142,11 @@ A deterministic, predicate-preserving shrinker reduces every generated
 bracket-negation witness while holding its drift classification, POSIX
 convergence, and matcher option state invariant. Across all 294 generated
 bracket-negation witnesses (`190` Type I and `104` Type II), reduction reaches
-the same 1-minimal canonical pattern (`[!a]`, combined length five), and each
-of the 17 structural placement groups is likewise shrunk within its structural
-class:
+the same reducer-canonical pattern (`[!a]`, combined length five)—certified
+1-minimal relative to this reducer's candidate neighborhood (which directly
+proposes `[!a]`, `a`, and `b` alongside deletions, so this is not a claim of
+unconstrained global minimality)—and each of the 17 structural placement groups
+is likewise reduced within its structural class:
 
 | Type | Pattern | Input | minimatch RegExp | picomatch default RegExp | picomatch POSIX RegExp |
 |---|---|---|---|---|---|
@@ -153,13 +155,18 @@ class:
 
 The compiler output makes the root cause visible: minimatch and picomatch
 POSIX mode emit a negated character class, while picomatch default mode treats
-`!` as a literal class member. Sweeping all six genuinely comparable shared
-flags (`dot`, `nocase`, `nobrace`, `noglobstar`, `noext`, `nonegate`) preserves
-`294/294` agreement under `{ posix: true }`, while picomatch `{ strictSlashes: true }`
-resolves all `66/66` remaining trailing-`/**` dialect disagreements (`360/360`
-combined). Both results are exhaustive for this deterministic generated witness
-set; neither is a universal proof over every possible glob pattern and
-candidate string.
+`!` as a literal class member. Replaying all six genuinely comparable shared
+flags (`dot`, `nocase`, `nobrace`, `noglobstar`, `noext`, `nonegate`) against
+each witness's recorded `dot` state preserves `294/294` agreement under
+`{ posix: true }`—with `dot: false`, `nobrace`, `noglobstar`, and the combined
+all-flags profile actively altering match decisions on this corpus, while
+`dot: true`, `nocase`, `noext`, and `nonegate` serve as `0/294`-change
+non-regression checks on the lowercase, non-extglob, non-negated generator
+output (targeted interactions are covered in `test/glob-shrink.test.ts`).
+Picomatch `{ strictSlashes: true }` resolves all `66/66` remaining
+trailing-`/**` dialect disagreements (`360/360` combined). These results are
+exhaustive for this deterministic generated witness set, not a universal proof
+over every possible glob pattern and candidate string.
 
 - **Type I:** the minimatch policy matches, but the picomatch resolver rejects.
 - **Type II:** the minimatch policy does not match a restricted-route rule,

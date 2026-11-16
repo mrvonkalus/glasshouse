@@ -7,8 +7,9 @@ export {}
 //
 // Reduction holds the matcher option state invariant, preserves both default
 // and `{ posix: true }` drift classifications, preserves unescaped `[!`
-// bracket-negation presence, and halts at a verified 1-minimal fixed point
-// under a strict well-founded tuple order.
+// bracket-negation presence, and halts at a reducer-canonical fixed point
+// certified 1-minimal relative to `generateShrinkCandidates` (which includes
+// canonical `[!a]`, `a`, and `b` replacements; not a global-minimality proof).
 
 const { minimatch } = require('minimatch') as typeof import('minimatch')
 
@@ -581,6 +582,17 @@ function generateShrinkCandidates (
   return candidates
 }
 
+function assertStructuralPrecondition (
+  preserveStructure: boolean,
+  structuralClassifier: ((pattern: string) => string) | undefined
+): void {
+  if (preserveStructure && typeof structuralClassifier !== 'function') {
+    throw new Error(
+      'preserveStructure requires a structuralClassifier function'
+    )
+  }
+}
+
 function shrinkWitness (
   seedInput: ShrinkableWitness,
   {
@@ -589,16 +601,12 @@ function shrinkWitness (
     maxSteps = DEFAULT_MAX_SHRINK_STEPS,
   }: ShrinkOptions = {}
 ): ShrinkResult {
+  assertStructuralPrecondition(preserveStructure, structuralClassifier)
+
   const seed: ShrinkableWitness = {
     pattern: seedInput.pattern,
     candidatePath: seedInput.candidatePath,
     options: cloneSharedOptions(seedInput.options),
-  }
-
-  if (preserveStructure && structuralClassifier === undefined) {
-    throw new Error(
-      'preserveStructure requires a structuralClassifier function'
-    )
   }
 
   const allowRelativeDots = hasRelativeDotSegment(seed.candidatePath)
@@ -700,10 +708,19 @@ function isOneMinimal (
     structuralClassifier,
   }: Omit<ShrinkOptions, 'maxSteps'> = {}
 ): boolean {
+  assertStructuralPrecondition(preserveStructure, structuralClassifier)
+
+  const allowRelativeDots = hasRelativeDotSegment(witness.candidatePath)
+  if (
+    !isValidPattern(witness.pattern) ||
+    !isValidNormalizedPath(witness.candidatePath, allowRelativeDots)
+  ) {
+    return false
+  }
+
   const baseline = evaluateWitness(witness)
   if (baseline === null || baseline.defaultDrift === null) return false
 
-  const allowRelativeDots = hasRelativeDotSegment(witness.candidatePath)
   const targetStructure =
     preserveStructure && structuralClassifier
       ? structuralClassifier(witness.pattern)

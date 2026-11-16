@@ -6,13 +6,28 @@ const assert: typeof import('node:assert/strict') = require('node:assert/strict'
 const test: typeof import('node:test') = require('node:test')
 const { minimatch } = require('minimatch') as typeof import('minimatch')
 
-type MatcherOptions = { dot?: boolean; posix?: boolean }
+type SharedMatcherOptions = Partial<
+  Record<
+    'dot' | 'nocase' | 'nobrace' | 'noglobstar' | 'noext' | 'nonegate',
+    boolean
+  >
+>
+type MatcherOptions = SharedMatcherOptions & { posix?: boolean }
 type Picomatch = (
   pattern: string,
   options?: MatcherOptions
 ) => (candidatePath: string) => boolean
 
 type DriftType = 'type-i' | 'type-ii' | null
+type BaseDotState = 'from-witness' | boolean
+type EffectiveOptionDescriptor = {
+  dot: BaseDotState
+  nocase: boolean
+  nobrace: boolean
+  noglobstar: boolean
+  noext: boolean
+  nonegate: boolean
+}
 type MatrixRow = {
   mode: 'default' | 'posix'
   agreement: number
@@ -23,7 +38,11 @@ type MatrixRow = {
 type SharedOptionMatrixRow = {
   id: string
   label: string
-  sharedOptions: Record<string, boolean> | 'from-witness'
+  baseDot: BaseDotState
+  optionDelta: SharedMatcherOptions
+  effectiveOptions: EffectiveOptionDescriptor
+  affectedWitnesses: number
+  corpusActive: boolean
   defaultMode: {
     agreement: number
     typeI: number
@@ -66,6 +85,12 @@ type DriftReport = {
   sourceDisagreements: number
   bracketWitnesses: number
   witnesses: Array<{
+    pattern: string
+    candidatePath: string
+    dot: boolean
+    policyMatches: boolean
+    resolverDefaultMatches: boolean
+    resolverPosixMatches: boolean
     defaultDrift: Exclude<DriftType, null>
     posixDrift: DriftType
   }>
@@ -87,6 +112,7 @@ type DriftReport = {
     combinedPosixAndStrictSlashesAgreement: number
   }
   shrinkSummary: {
+    minimalityScope: 'reducer-neighborhood'
     totalWitnesses: number
     verifiedMinimal: number
     preservedClassification: number
@@ -116,6 +142,7 @@ const {
   classifyDrift,
   renderJson,
   renderMarkdown,
+  resolveEffectiveOptions,
   structuralPatternClass,
 } = require('../harnesses/glob-middleware-drift') as {
   buildReport: () => DriftReport
@@ -125,6 +152,10 @@ const {
     options?: { includeWitnesses?: boolean }
   ) => string
   renderMarkdown: (report: DriftReport) => string
+  resolveEffectiveOptions: (
+    effectiveOptions: EffectiveOptionDescriptor,
+    witness: { dot: boolean }
+  ) => SharedMatcherOptions
   structuralPatternClass: (pattern: string) => string
 }
 
@@ -197,16 +228,125 @@ test('the options matrix shows posix mode resolving every bracket witness', () =
   ])
 })
 
-test('shared-options matrix converges under posix across all comparable flag profiles', () => {
-  const { sharedOptionsMatrix, bracketWitnesses } = buildReport()
+test('shared-options matrix metadata matches effective evaluation and reports corpus activity', () => {
+  const { sharedOptionsMatrix, bracketWitnesses, witnesses } = buildReport()
   assert.equal(sharedOptionsMatrix.length, 9)
+
+  assert.deepEqual(
+    sharedOptionsMatrix.map(row => ({
+      id: row.id,
+      baseDot: row.baseDot,
+      affectedWitnesses: row.affectedWitnesses,
+      corpusActive: row.corpusActive,
+    })),
+    [
+      {
+        id: 'witness-recorded',
+        baseDot: 'from-witness',
+        affectedWitnesses: 0,
+        corpusActive: false,
+      },
+      {
+        id: 'dot:false',
+        baseDot: false,
+        affectedWitnesses: 14,
+        corpusActive: true,
+      },
+      {
+        id: 'dot:true',
+        baseDot: true,
+        affectedWitnesses: 0,
+        corpusActive: false,
+      },
+      {
+        id: 'nocase:true',
+        baseDot: 'from-witness',
+        affectedWitnesses: 0,
+        corpusActive: false,
+      },
+      {
+        id: 'nobrace:true',
+        baseDot: 'from-witness',
+        affectedWitnesses: 14,
+        corpusActive: true,
+      },
+      {
+        id: 'noglobstar:true',
+        baseDot: 'from-witness',
+        affectedWitnesses: 60,
+        corpusActive: true,
+      },
+      {
+        id: 'noext:true',
+        baseDot: 'from-witness',
+        affectedWitnesses: 0,
+        corpusActive: false,
+      },
+      {
+        id: 'nonegate:true',
+        baseDot: 'from-witness',
+        affectedWitnesses: 0,
+        corpusActive: false,
+      },
+      {
+        id: 'all-shared:true',
+        baseDot: true,
+        affectedWitnesses: 74,
+        corpusActive: true,
+      },
+    ]
+  )
 
   for (const row of sharedOptionsMatrix) {
     assert.equal(row.total, bracketWitnesses)
-    assert.equal(
-      row.defaultMode.agreement + row.defaultMode.typeI + row.defaultMode.typeII,
-      bracketWitnesses
-    )
+    assert.deepEqual(row.effectiveOptions, {
+      dot:
+        row.optionDelta.dot !== undefined ? row.optionDelta.dot : row.baseDot,
+      nocase: Boolean(row.optionDelta.nocase),
+      nobrace: Boolean(row.optionDelta.nobrace),
+      noglobstar: Boolean(row.optionDelta.noglobstar),
+      noext: Boolean(row.optionDelta.noext),
+      nonegate: Boolean(row.optionDelta.nonegate),
+    })
+
+    // Independently replay every witness from exported `effectiveOptions`
+    // to verify metadata equals actual evaluation options.
+    let defaultAgree = 0
+    let defaultTypeI = 0
+    let defaultTypeII = 0
+    let posixAgree = 0
+    let affected = 0
+
+    for (const witness of witnesses) {
+      const effective = resolveEffectiveOptions(row.effectiveOptions, witness)
+      const mm = minimatch(witness.candidatePath, witness.pattern, effective)
+      const pmDef = picomatch(witness.pattern, effective)(witness.candidatePath)
+      const pmPosix = picomatch(witness.pattern, { ...effective, posix: true })(
+        witness.candidatePath
+      )
+
+      if (
+        mm !== witness.policyMatches ||
+        pmDef !== witness.resolverDefaultMatches ||
+        pmPosix !== witness.resolverPosixMatches
+      ) {
+        affected++
+      }
+
+      const defDrift = classifyDrift(mm, pmDef)
+      if (defDrift === null) defaultAgree++
+      else if (defDrift === 'type-i') defaultTypeI++
+      else defaultTypeII++
+
+      if (mm === pmPosix) posixAgree++
+    }
+
+    assert.equal(row.affectedWitnesses, affected)
+    assert.equal(row.corpusActive, affected > 0)
+    assert.equal(row.defaultMode.agreement, defaultAgree)
+    assert.equal(row.defaultMode.typeI, defaultTypeI)
+    assert.equal(row.defaultMode.typeII, defaultTypeII)
+    assert.equal(row.posixMode.agreement, posixAgree)
     assert.equal(row.posixMode.agreement, bracketWitnesses)
     assert.equal(row.posixMode.typeI, 0)
     assert.equal(row.posixMode.typeII, 0)
@@ -241,9 +381,10 @@ test('partitions all 360 source disagreements into [! bracket negation and trail
   })
 })
 
-test('shrinks every bracket witness to its verified 1-minimal normal form', () => {
+test('shrinks every bracket witness to its reducer-canonical neighborhood-minimal form', () => {
   const { minimalWitnesses, shrinkSummary } = buildReport()
 
+  assert.equal(shrinkSummary.minimalityScope, 'reducer-neighborhood')
   assert.equal(shrinkSummary.totalWitnesses, 294)
   assert.equal(shrinkSummary.verifiedMinimal, 294)
   assert.equal(shrinkSummary.preservedClassification, 294)
@@ -392,6 +533,13 @@ test('exports compact JSON and Markdown artifacts from the same report model', (
   assert.deepEqual(compact.shrinkSummary, report.shrinkSummary)
   assert.equal(Array.isArray(full.witnesses), true)
   assert.match(markdown, /## Shared-options matrix \(comparable flags\)/)
+  assert.match(markdown, /\| Effective shared options \| Affected witnesses \|/)
+  assert.match(markdown, /non-regression checks on this corpus/)
+  assert.match(markdown, /reducer-canonical/)
+  assert.match(
+    markdown,
+    /1-minimal relative to this reducer's candidate neighborhood/
+  )
   assert.match(markdown, /360\/360 agreement across the generated differential set/)
 })
 
