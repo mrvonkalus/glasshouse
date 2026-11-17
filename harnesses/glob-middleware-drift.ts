@@ -12,14 +12,104 @@ export {}
 // does not maintain a copied fixture list, so changes to the generator, package
 // versions, or option matrix are visible immediately.
 
+import type { MinimatchOptions } from 'minimatch'
+
+const { minimatch } = require('minimatch') as typeof import('minimatch')
+const {
+  SHARED_OPTION_KEYS,
+  classifyDrift,
+  compareShrinkTuple,
+  evaluateWitness,
+  sharedOptionsEqual,
+  shrinkWitness,
+} = require('../lib/glob-shrink') as {
+  SHARED_OPTION_KEYS: readonly [
+    'dot',
+    'nocase',
+    'nobrace',
+    'noglobstar',
+    'noext',
+    'nonegate',
+  ]
+  classifyDrift: (
+    policyMatches: boolean,
+    resolverMatches: boolean
+  ) => DriftType | null
+  compareShrinkTuple: (
+    left: { pattern: string; candidatePath: string },
+    right: { pattern: string; candidatePath: string }
+  ) => number
+  evaluateWitness: (witness: {
+    pattern: string
+    candidatePath: string
+    options: SharedMatcherOptions
+  }) => {
+    policyMatches: boolean
+    resolverDefaultMatches: boolean
+    resolverPosixMatches: boolean
+    defaultDrift: DriftType | null
+    posixDrift: DriftType | null
+    bracketNegation: boolean
+    defaultRegexConsistent: boolean
+    posixRegexConsistent: boolean
+    regexConsistent: boolean
+  } | null
+  sharedOptionsEqual: (
+    left: SharedMatcherOptions,
+    right: SharedMatcherOptions
+  ) => boolean
+  shrinkWitness: (
+    seed: {
+      pattern: string
+      candidatePath: string
+      options: SharedMatcherOptions
+    },
+    options?: {
+      preserveStructure?: boolean
+      structuralClassifier?: (pattern: string) => string
+      maxSteps?: number
+    }
+  ) => {
+    seed: {
+      pattern: string
+      candidatePath: string
+      options: SharedMatcherOptions
+    }
+    witness: {
+      pattern: string
+      candidatePath: string
+      options: SharedMatcherOptions
+    }
+    evaluation: {
+      policyMatches: boolean
+      resolverDefaultMatches: boolean
+      resolverPosixMatches: boolean
+      defaultDrift: DriftType | null
+      posixDrift: DriftType | null
+      bracketNegation: boolean
+      defaultRegexConsistent: boolean
+      posixRegexConsistent: boolean
+      regexConsistent: boolean
+    }
+    steps: number
+    candidatesTested: number
+    initialScore: number
+    finalScore: number
+    minimal: boolean
+  }
+}
+
 type GeneratorOptions = {
   seed?: number
   cases?: number
 }
 
-type MatcherOptions = {
-  dot?: boolean
+type SharedOptionKey = (typeof SHARED_OPTION_KEYS)[number]
+type SharedMatcherOptions = Partial<Record<SharedOptionKey, boolean>>
+
+type PicomatchOptions = SharedMatcherOptions & {
   posix?: boolean
+  strictSlashes?: boolean
 }
 
 type SourceWitness = {
@@ -56,12 +146,21 @@ type CompiledRegex = {
   flags: string
 }
 
+type ShrinkProvenance = {
+  seedPattern: string
+  seedCandidatePath: string
+  seedScore: number
+  steps: number
+  minimal: boolean
+}
+
 type CompiledWitness = RouteWitness & {
   score: number
   structuralClass: string
   minimatchRegex: CompiledRegex
   picomatchDefaultRegex: CompiledRegex
   picomatchPosixRegex: CompiledRegex
+  shrink: ShrinkProvenance
 }
 
 type StructuralMinimum = {
@@ -79,6 +178,80 @@ type MatrixRow = {
   total: number
 }
 
+type ModeOutcomeSummary = {
+  agreement: number
+  typeI: number
+  typeII: number
+  regexConsistent: number
+}
+
+type BaseDotState = 'from-witness' | boolean
+
+type EffectiveOptionDescriptor = {
+  dot: BaseDotState
+  nocase: boolean
+  nobrace: boolean
+  noglobstar: boolean
+  noext: boolean
+  nonegate: boolean
+}
+
+type SharedOptionProfile = {
+  id: string
+  label: string
+  baseDot: BaseDotState
+  optionDelta: SharedMatcherOptions
+  effectiveOptions: EffectiveOptionDescriptor
+}
+
+type SharedOptionMatrixRow = {
+  id: string
+  label: string
+  baseDot: BaseDotState
+  optionDelta: SharedMatcherOptions
+  effectiveOptions: EffectiveOptionDescriptor
+  affectedWitnesses: number
+  corpusActive: boolean
+  defaultMode: ModeOutcomeSummary
+  posixMode: ModeOutcomeSummary
+  total: number
+}
+
+type DisagreementPartition = {
+  totalDisagreements: number
+  bracketNegation: {
+    count: number
+    resolvedByPosix: number
+    resolvedByStrictSlashes: number
+  }
+  nonBracketDialect: {
+    count: number
+    trailingGlobstarCount: number
+    resolvedByPosix: number
+    resolvedByStrictSlashes: number
+  }
+  combinedPosixAndStrictSlashesAgreement: number
+}
+
+type NormalFormSummary = {
+  driftType: DriftType
+  pattern: string
+  candidatePath: string
+  dot: boolean
+  count: number
+}
+
+type ShrinkSummary = {
+  minimalityScope: 'reducer-neighborhood'
+  totalWitnesses: number
+  verifiedMinimal: number
+  preservedClassification: number
+  preservedOptions: number
+  strictlyReduced: number
+  maxSteps: number
+  normalForms: NormalFormSummary[]
+}
+
 type DriftReport = {
   name: string
   target: string
@@ -87,6 +260,9 @@ type DriftReport = {
   bracketWitnesses: number
   witnesses: RouteWitness[]
   matrix: MatrixRow[]
+  sharedOptionsMatrix: SharedOptionMatrixRow[]
+  disagreementPartition: DisagreementPartition
+  shrinkSummary: ShrinkSummary
   minimalWitnesses: CompiledWitness[]
   structuralMinima: StructuralMinimum[]
 }
@@ -94,24 +270,110 @@ type DriftReport = {
 type Picomatch = {
   (
     pattern: string,
-    options?: MatcherOptions
+    options?: PicomatchOptions
   ): (candidatePath: string) => boolean
-  makeRe: (pattern: string, options?: MatcherOptions) => RegExp
+  makeRe: (pattern: string, options?: PicomatchOptions) => RegExp
 }
 
-const { minimatch } = require('minimatch') as typeof import('minimatch')
 const picomatch = require('picomatch') as Picomatch
 const { run: runGlobBrackets } = require('./glob-brackets') as {
   run: (options?: GeneratorOptions) => SourceResult
 }
 
-function classifyDrift (
-  policyMatches: boolean,
-  resolverMatches: boolean
-): DriftType | null {
-  if (policyMatches === resolverMatches) return null
-  return policyMatches ? 'type-i' : 'type-ii'
+function buildEffectiveOptionDescriptor (
+  baseDot: BaseDotState,
+  optionDelta: SharedMatcherOptions
+): EffectiveOptionDescriptor {
+  return {
+    dot: optionDelta.dot !== undefined ? optionDelta.dot : baseDot,
+    nocase: Boolean(optionDelta.nocase),
+    nobrace: Boolean(optionDelta.nobrace),
+    noglobstar: Boolean(optionDelta.noglobstar),
+    noext: Boolean(optionDelta.noext),
+    nonegate: Boolean(optionDelta.nonegate),
+  }
 }
+
+function resolveEffectiveOptions (
+  effectiveOptions: EffectiveOptionDescriptor,
+  witness: { dot: boolean }
+): SharedMatcherOptions {
+  return {
+    dot:
+      effectiveOptions.dot === 'from-witness'
+        ? witness.dot
+        : effectiveOptions.dot,
+    nocase: effectiveOptions.nocase,
+    nobrace: effectiveOptions.nobrace,
+    noglobstar: effectiveOptions.noglobstar,
+    noext: effectiveOptions.noext,
+    nonegate: effectiveOptions.nonegate,
+  }
+}
+
+function defineOptionProfile (
+  id: string,
+  label: string,
+  baseDot: BaseDotState,
+  optionDelta: SharedMatcherOptions
+): SharedOptionProfile {
+  return {
+    id,
+    label,
+    baseDot,
+    optionDelta: { ...optionDelta },
+    effectiveOptions: buildEffectiveOptionDescriptor(baseDot, optionDelta),
+  }
+}
+
+const SHARED_OPTION_PROFILES: ReadonlyArray<SharedOptionProfile> = [
+  defineOptionProfile(
+    'witness-recorded',
+    '{ dot: witness.dot } (recorded baseline)',
+    'from-witness',
+    {}
+  ),
+  defineOptionProfile('dot:false', '{ dot: false }', false, { dot: false }),
+  defineOptionProfile('dot:true', '{ dot: true }', true, { dot: true }),
+  defineOptionProfile(
+    'nocase:true',
+    '{ dot: witness.dot, nocase: true }',
+    'from-witness',
+    { nocase: true }
+  ),
+  defineOptionProfile(
+    'nobrace:true',
+    '{ dot: witness.dot, nobrace: true }',
+    'from-witness',
+    { nobrace: true }
+  ),
+  defineOptionProfile(
+    'noglobstar:true',
+    '{ dot: witness.dot, noglobstar: true }',
+    'from-witness',
+    { noglobstar: true }
+  ),
+  defineOptionProfile(
+    'noext:true',
+    '{ dot: witness.dot, noext: true }',
+    'from-witness',
+    { noext: true }
+  ),
+  defineOptionProfile(
+    'nonegate:true',
+    '{ dot: witness.dot, nonegate: true }',
+    'from-witness',
+    { nonegate: true }
+  ),
+  defineOptionProfile('all-shared:true', 'all 6 shared flags true', true, {
+    dot: true,
+    nocase: true,
+    nobrace: true,
+    noglobstar: true,
+    noext: true,
+    nonegate: true,
+  }),
+]
 
 function compareText (left: string, right: string): number {
   if (left === right) return 0
@@ -119,15 +381,10 @@ function compareText (left: string, right: string): number {
 }
 
 function compareWitnesses (left: RouteWitness, right: RouteWitness): number {
-  const leftScore = left.pattern.length + left.candidatePath.length
-  const rightScore = right.pattern.length + right.candidatePath.length
-
-  return leftScore - rightScore ||
-    left.pattern.length - right.pattern.length ||
-    left.candidatePath.length - right.candidatePath.length ||
-    compareText(left.pattern, right.pattern) ||
-    compareText(left.candidatePath, right.candidatePath) ||
+  return (
+    compareShrinkTuple(left, right) ||
     Number(left.dot) - Number(right.dot)
+  )
 }
 
 function structuralPatternClass (pattern: string): string {
@@ -149,34 +406,177 @@ function regexDetails (regex: RegExp | false): CompiledRegex {
   return { source: regex.source, flags: regex.flags }
 }
 
-function compileWitness (witness: RouteWitness): CompiledWitness {
-  const options: MatcherOptions = { dot: witness.dot }
+function compileWitness (
+  witness: RouteWitness,
+  shrink?: ShrinkProvenance
+): CompiledWitness {
+  const options: SharedMatcherOptions = { dot: witness.dot }
+  const score = witness.pattern.length + witness.candidatePath.length
 
   return {
     ...witness,
-    score: witness.pattern.length + witness.candidatePath.length,
+    score,
     structuralClass: structuralPatternClass(witness.pattern),
-    minimatchRegex: regexDetails(minimatch.makeRe(witness.pattern, options)),
+    minimatchRegex: regexDetails(
+      minimatch.makeRe(witness.pattern, options as MinimatchOptions)
+    ),
     picomatchDefaultRegex: regexDetails(
       picomatch.makeRe(witness.pattern, options)
     ),
     picomatchPosixRegex: regexDetails(
       picomatch.makeRe(witness.pattern, { ...options, posix: true })
     ),
+    shrink: shrink ?? {
+      seedPattern: witness.pattern,
+      seedCandidatePath: witness.candidatePath,
+      seedScore: score,
+      steps: 0,
+      minimal: true,
+    },
+  }
+}
+
+function shrinkRouteWitness (
+  witness: RouteWitness,
+  { preserveStructure = false }: { preserveStructure?: boolean } = {}
+): { routeWitness: RouteWitness; provenance: ShrinkProvenance } {
+  const seedOptions: SharedMatcherOptions = { dot: witness.dot }
+  const shrunk = shrinkWitness(
+    {
+      pattern: witness.pattern,
+      candidatePath: witness.candidatePath,
+      options: seedOptions,
+    },
+    {
+      preserveStructure,
+      structuralClassifier: preserveStructure
+        ? structuralPatternClass
+        : undefined,
+    }
+  )
+
+  if (
+    shrunk.evaluation.defaultDrift !== witness.defaultDrift ||
+    shrunk.evaluation.posixDrift !== witness.posixDrift ||
+    !sharedOptionsEqual(shrunk.witness.options, seedOptions)
+  ) {
+    throw new Error(
+      `shrink invariant failed for ${JSON.stringify({
+        pattern: witness.pattern,
+        candidatePath: witness.candidatePath,
+        dot: witness.dot,
+      })}`
+    )
+  }
+
+  return {
+    routeWitness: {
+      pattern: shrunk.witness.pattern,
+      candidatePath: shrunk.witness.candidatePath,
+      dot: Boolean(shrunk.witness.options.dot),
+      policyMatches: shrunk.evaluation.policyMatches,
+      resolverDefaultMatches: shrunk.evaluation.resolverDefaultMatches,
+      resolverPosixMatches: shrunk.evaluation.resolverPosixMatches,
+      defaultDrift: witness.defaultDrift,
+      posixDrift: shrunk.evaluation.posixDrift,
+    },
+    provenance: {
+      seedPattern: shrunk.seed.pattern,
+      seedCandidatePath: shrunk.seed.candidatePath,
+      seedScore: shrunk.initialScore,
+      steps: shrunk.steps,
+      minimal: shrunk.minimal,
+    },
+  }
+}
+
+function compareReducedEntries (
+  left: { routeWitness: RouteWitness; provenance: ShrinkProvenance },
+  right: { routeWitness: RouteWitness; provenance: ShrinkProvenance }
+): number {
+  return (
+    compareWitnesses(left.routeWitness, right.routeWitness) ||
+    left.provenance.steps - right.provenance.steps ||
+    left.provenance.seedScore - right.provenance.seedScore ||
+    compareText(left.provenance.seedPattern, right.provenance.seedPattern) ||
+    compareText(
+      left.provenance.seedCandidatePath,
+      right.provenance.seedCandidatePath
+    )
+  )
+}
+
+function shrinkAllWitnesses (witnesses: RouteWitness[]): {
+  minimalWitnesses: CompiledWitness[]
+  shrinkSummary: ShrinkSummary
+} {
+  const reduced = witnesses.map(witness => shrinkRouteWitness(witness))
+  const normalFormCounts = new Map<string, NormalFormSummary>()
+  let verifiedMinimal = 0
+  let strictlyReduced = 0
+  let maxSteps = 0
+
+  for (const entry of reduced) {
+    const { routeWitness, provenance } = entry
+    if (provenance.minimal) verifiedMinimal++
+    if (provenance.steps > 0) strictlyReduced++
+    if (provenance.steps > maxSteps) maxSteps = provenance.steps
+
+    const key =
+      `${routeWitness.defaultDrift}\u0000` +
+      `${routeWitness.pattern}\u0000` +
+      `${routeWitness.candidatePath}\u0000` +
+      `${String(routeWitness.dot)}`
+    const current = normalFormCounts.get(key)
+    if (current === undefined) {
+      normalFormCounts.set(key, {
+        driftType: routeWitness.defaultDrift,
+        pattern: routeWitness.pattern,
+        candidatePath: routeWitness.candidatePath,
+        dot: routeWitness.dot,
+        count: 1,
+      })
+    } else {
+      current.count++
+    }
+  }
+
+  const minimalWitnesses = (['type-i', 'type-ii'] as const).map(driftType => {
+    const best = reduced
+      .filter(entry => entry.routeWitness.defaultDrift === driftType)
+      .sort(compareReducedEntries)[0]
+
+    if (best === undefined) {
+      throw new Error(`no ${driftType} witness was generated`)
+    }
+    return compileWitness(best.routeWitness, best.provenance)
+  })
+
+  const normalForms = [...normalFormCounts.values()].sort(
+    (left, right) =>
+      compareText(left.driftType, right.driftType) ||
+      Number(left.dot) - Number(right.dot) ||
+      compareText(left.pattern, right.pattern) ||
+      compareText(left.candidatePath, right.candidatePath)
+  )
+
+  return {
+    minimalWitnesses,
+    shrinkSummary: {
+      minimalityScope: 'reducer-neighborhood',
+      totalWitnesses: witnesses.length,
+      verifiedMinimal,
+      preservedClassification: reduced.length,
+      preservedOptions: reduced.length,
+      strictlyReduced,
+      maxSteps,
+      normalForms,
+    },
   }
 }
 
 function minimalByDrift (witnesses: RouteWitness[]): CompiledWitness[] {
-  return (['type-i', 'type-ii'] as const).map(driftType => {
-    const witness = witnesses
-      .filter(candidate => candidate.defaultDrift === driftType)
-      .sort(compareWitnesses)[0]
-
-    if (witness === undefined) {
-      throw new Error(`no ${driftType} witness was generated`)
-    }
-    return compileWitness(witness)
-  })
+  return shrinkAllWitnesses(witnesses).minimalWitnesses
 }
 
 function minimalByStructure (witnesses: RouteWitness[]): StructuralMinimum[] {
@@ -192,18 +592,24 @@ function minimalByStructure (witnesses: RouteWitness[]): StructuralMinimum[] {
 
   return [...groups.values()]
     .map(group => {
-      const witness = group.sort(compareWitnesses)[0]
+      const best = group
+        .map(candidate =>
+          shrinkRouteWitness(candidate, { preserveStructure: true })
+        )
+        .sort(compareReducedEntries)[0]
+
       return {
-        structuralClass: structuralPatternClass(witness.pattern),
-        driftType: witness.defaultDrift,
+        structuralClass: structuralPatternClass(best.routeWitness.pattern),
+        driftType: best.routeWitness.defaultDrift,
         witnessCount: group.length,
-        witness: compileWitness(witness),
+        witness: compileWitness(best.routeWitness, best.provenance),
       }
     })
-    .sort((left, right) =>
-      compareWitnesses(left.witness, right.witness) ||
-      compareText(left.driftType, right.driftType) ||
-      compareText(left.structuralClass, right.structuralClass)
+    .sort(
+      (left, right) =>
+        compareWitnesses(left.witness, right.witness) ||
+        compareText(left.driftType, right.driftType) ||
+        compareText(left.structuralClass, right.structuralClass)
     )
 }
 
@@ -226,13 +632,19 @@ function ingestDifferentialWitnesses (options: GeneratorOptions = {}): {
 }
 
 function evaluateRouteWitness (witness: SourceWitness): RouteWitness {
-  const options: MatcherOptions = { dot: witness.dot }
-  const policyMatches = minimatch(witness.path, witness.pattern, options)
-  const resolverDefaultMatches = picomatch(witness.pattern, options)(witness.path)
-  const resolverPosixMatches = picomatch(
+  const options: SharedMatcherOptions = { dot: witness.dot }
+  const policyMatches = minimatch(
+    witness.path,
     witness.pattern,
-    { ...options, posix: true }
-  )(witness.path)
+    options as MinimatchOptions
+  )
+  const resolverDefaultMatches = picomatch(witness.pattern, options)(
+    witness.path
+  )
+  const resolverPosixMatches = picomatch(witness.pattern, {
+    ...options,
+    posix: true,
+  })(witness.path)
 
   if (
     policyMatches !== witness.minimatch ||
@@ -280,16 +692,153 @@ function summarizeMode (
   }
 }
 
+function evaluateSharedOptionMatrix (
+  witnesses: RouteWitness[]
+): SharedOptionMatrixRow[] {
+  return SHARED_OPTION_PROFILES.map(profile => {
+    const defaultMode: ModeOutcomeSummary = {
+      agreement: 0,
+      typeI: 0,
+      typeII: 0,
+      regexConsistent: 0,
+    }
+    const posixMode: ModeOutcomeSummary = {
+      agreement: 0,
+      typeI: 0,
+      typeII: 0,
+      regexConsistent: 0,
+    }
+    let affectedWitnesses = 0
+
+    for (const witness of witnesses) {
+      const shared = resolveEffectiveOptions(profile.effectiveOptions, witness)
+      const evaluated = evaluateWitness({
+        pattern: witness.pattern,
+        candidatePath: witness.candidatePath,
+        options: shared,
+      })
+      if (evaluated === null) {
+        throw new Error(
+          `shared option profile ${profile.id} failed to evaluate ${witness.pattern}`
+        )
+      }
+
+      if (
+        evaluated.policyMatches !== witness.policyMatches ||
+        evaluated.resolverDefaultMatches !== witness.resolverDefaultMatches ||
+        evaluated.resolverPosixMatches !== witness.resolverPosixMatches
+      ) {
+        affectedWitnesses++
+      }
+
+      if (evaluated.defaultDrift === null) defaultMode.agreement++
+      else if (evaluated.defaultDrift === 'type-i') defaultMode.typeI++
+      else defaultMode.typeII++
+
+      if (evaluated.posixDrift === null) posixMode.agreement++
+      else if (evaluated.posixDrift === 'type-i') posixMode.typeI++
+      else posixMode.typeII++
+
+      if (evaluated.defaultRegexConsistent) {
+        defaultMode.regexConsistent++
+      }
+      if (evaluated.posixRegexConsistent) {
+        posixMode.regexConsistent++
+      }
+    }
+
+    return {
+      id: profile.id,
+      label: profile.label,
+      baseDot: profile.baseDot,
+      optionDelta: { ...profile.optionDelta },
+      effectiveOptions: { ...profile.effectiveOptions },
+      affectedWitnesses,
+      corpusActive: affectedWitnesses > 0,
+      defaultMode,
+      posixMode,
+      total: witnesses.length,
+    }
+  })
+}
+
+function partitionSourceDisagreements (
+  allDisagreements: SourceWitness[]
+): DisagreementPartition {
+  let bracketCount = 0
+  let bracketResolvedByPosix = 0
+  let bracketResolvedByStrictSlashes = 0
+  let nonBracketCount = 0
+  let trailingGlobstarCount = 0
+  let nonBracketResolvedByPosix = 0
+  let nonBracketResolvedByStrictSlashes = 0
+  let combinedPosixAndStrictSlashesAgreement = 0
+
+  for (const witness of allDisagreements) {
+    const shared: SharedMatcherOptions = { dot: witness.dot }
+    const mm = minimatch(
+      witness.path,
+      witness.pattern,
+      shared as MinimatchOptions
+    )
+    const pmPosix = picomatch(witness.pattern, { ...shared, posix: true })(
+      witness.path
+    )
+    const pmStrictSlashes = picomatch(witness.pattern, {
+      ...shared,
+      strictSlashes: true,
+    })(witness.path)
+    const pmCombined = picomatch(witness.pattern, {
+      ...shared,
+      posix: true,
+      strictSlashes: true,
+    })(witness.path)
+
+    if (mm === pmCombined) {
+      combinedPosixAndStrictSlashesAgreement++
+    }
+
+    if (witness.bracketNegation) {
+      bracketCount++
+      if (mm === pmPosix) bracketResolvedByPosix++
+      if (mm === pmStrictSlashes) bracketResolvedByStrictSlashes++
+    } else {
+      nonBracketCount++
+      if (witness.pattern.endsWith('/**')) trailingGlobstarCount++
+      if (mm === pmPosix) nonBracketResolvedByPosix++
+      if (mm === pmStrictSlashes) nonBracketResolvedByStrictSlashes++
+    }
+  }
+
+  return {
+    totalDisagreements: allDisagreements.length,
+    bracketNegation: {
+      count: bracketCount,
+      resolvedByPosix: bracketResolvedByPosix,
+      resolvedByStrictSlashes: bracketResolvedByStrictSlashes,
+    },
+    nonBracketDialect: {
+      count: nonBracketCount,
+      trailingGlobstarCount,
+      resolvedByPosix: nonBracketResolvedByPosix,
+      resolvedByStrictSlashes: nonBracketResolvedByStrictSlashes,
+    },
+    combinedPosixAndStrictSlashesAgreement,
+  }
+}
+
 function buildReport (options: GeneratorOptions = {}): DriftReport {
   const { source, witnesses: allDisagreements } =
     ingestDifferentialWitnesses(options)
 
   // Only [! bracket-negation findings are associated with picomatch #187.
   // Other source disagreements include documented globstar/path semantics and
-  // are deliberately excluded from this downstream impact projection.
+  // are adjudicated explicitly in `disagreementPartition`.
   const witnesses = allDisagreements
     .filter(witness => witness.bracketNegation)
     .map(evaluateRouteWitness)
+
+  const { minimalWitnesses, shrinkSummary } = shrinkAllWitnesses(witnesses)
 
   return {
     name: 'downstream middleware route-matching drift',
@@ -302,7 +851,10 @@ function buildReport (options: GeneratorOptions = {}): DriftReport {
       summarizeMode('default', witnesses),
       summarizeMode('posix', witnesses),
     ],
-    minimalWitnesses: minimalByDrift(witnesses),
+    sharedOptionsMatrix: evaluateSharedOptionMatrix(witnesses),
+    disagreementPartition: partitionSourceDisagreements(allDisagreements),
+    shrinkSummary,
+    minimalWitnesses,
     structuralMinima: minimalByStructure(witnesses),
   }
 }
@@ -312,13 +864,21 @@ function code (value: string): string {
 }
 
 function renderMarkdown (report: DriftReport): string {
+  const partition = report.disagreementPartition
+  const shrink = report.shrinkSummary
+
   const lines = [
     '# Downstream middleware route-matching consistency',
     '',
     `- Target: ${code(report.target)}`,
     `- Generated pattern/path pairs checked: ${report.checked}`,
-    `- Source differential witnesses: ${report.sourceDisagreements}`,
+    `- Source differential witnesses: ${report.sourceDisagreements} ` +
+      `(${partition.bracketNegation.count} \`[!\` bracket negation + ` +
+      `${partition.nonBracketDialect.count} documented trailing-\`/**\` dialect)`,
     `- Bracket-negation witnesses analyzed: ${report.bracketWitnesses}`,
+    `- Predicate-preserving shrink verification: ${shrink.verifiedMinimal}/${shrink.totalWitnesses} ` +
+      `reducer-canonical fixed points, 1-minimal relative to this reducer's candidate neighborhood ` +
+      `(${shrink.strictlyReduced} reduced, max ${shrink.maxSteps} steps)`,
     '',
     '| Picomatch resolver mode | Agreement with minimatch policy | Type I | Type II | Total |',
     '|---|---:|---:|---:|---:|',
@@ -330,7 +890,42 @@ function renderMarkdown (report: DriftReport): string {
     '- **Type I:** minimatch policy matches; picomatch resolver rejects.',
     '- **Type II:** minimatch policy does not match a restricted-route rule; picomatch resolver matches.',
     '',
-    '## Minimal compiler witnesses',
+    '## Shared-options matrix (comparable flags)',
+    '',
+    '| Effective shared options | Affected witnesses | Default agree | Default Type I | Default Type II | POSIX agree | Regex parity (default / POSIX) |',
+    '|---|---:|---:|---:|---:|---:|---:|',
+    ...report.sharedOptionsMatrix.map(row =>
+      `| ${code(row.label)} | ${row.affectedWitnesses}/${row.total} | ${row.defaultMode.agreement} | ` +
+      `${row.defaultMode.typeI} | ${row.defaultMode.typeII} | ` +
+      `${row.posixMode.agreement}/${row.total} | ` +
+      `${row.defaultMode.regexConsistent}/${row.total} · ${row.posixMode.regexConsistent}/${row.total} |`
+    ),
+    '',
+    '`Affected witnesses` counts generated bracket-negation witnesses whose runtime',
+    'match decisions (`minimatch`, default `picomatch`, or POSIX `picomatch`) change',
+    'relative to the recorded `{ dot: witness.dot }` baseline. On this seeded corpus,',
+    '`{ dot: false }`, `nobrace: true`, `noglobstar: true`, and `all 6 shared flags true`',
+    'actively alter match decisions, whereas `{ dot: true }`, `nocase: true`,',
+    '`noext: true`, and `nonegate: true` produce `0/294` decision changes because',
+    '`glob-brackets.js` emits lowercase segments without extglobs or leading `!`',
+    'negation (and no `dot: false` witness flips under `dot: true`). Those `0/294`',
+    'rows are non-regression checks on this corpus rather than behavioral coverage',
+    'of uppercase, extglob, or leading-negation interactions (covered on targeted',
+    'witnesses in `test/glob-shrink.test.ts`).',
+    '',
+    '## Disagreement partition across all 360 differential findings',
+    '',
+    `- \`[!\` bracket-negation subset (${partition.bracketNegation.count}): ` +
+      `${partition.bracketNegation.resolvedByPosix}/${partition.bracketNegation.count} resolved by picomatch ${code('{ posix: true }')}, ` +
+      `${partition.bracketNegation.resolvedByStrictSlashes}/${partition.bracketNegation.count} by ${code('{ strictSlashes: true }')}.`,
+    `- Non-bracket dialect subset (${partition.nonBracketDialect.count}, ` +
+      `${partition.nonBracketDialect.trailingGlobstarCount} ending in ${code('/**')}): ` +
+      `${partition.nonBracketDialect.resolvedByStrictSlashes}/${partition.nonBracketDialect.count} resolved by picomatch ${code('{ strictSlashes: true }')}, ` +
+      `${partition.nonBracketDialect.resolvedByPosix}/${partition.nonBracketDialect.count} by ${code('{ posix: true }')}.`,
+    `- Combined picomatch ${code('{ posix: true, strictSlashes: true }')}: ` +
+      `${partition.combinedPosixAndStrictSlashesAgreement}/${partition.totalDisagreements} agreement across the generated differential set.`,
+    '',
+    '## Reducer-canonical compiler witnesses (predicate-preserving shrink)',
     '',
     '| Type | Pattern | Input | minimatch RegExp | picomatch default RegExp | picomatch POSIX RegExp |',
     '|---|---|---|---|---|---|',
@@ -342,11 +937,16 @@ function renderMarkdown (report: DriftReport): string {
       `${code(witness.picomatchPosixRegex.source)} |`
     ),
     '',
-    'The shortest witness in both directions uses the same pattern. Minimatch',
-    'and picomatch POSIX mode compile `[!a]` to a negated character class;',
-    'picomatch default mode emits `!` as a literal class member.',
+    'Every generated bracket-negation witness reduces under the classification-',
+    'and option-preserving predicate to the reducer-canonical pattern `[!a]`',
+    '(`b` for Type I, `a` for Type II). Because the reducer directly proposes',
+    '`[!a]`, `a`, and `b` alongside segment and character deletions, this fixed',
+    'point is 1-minimal relative to this reducer\'s candidate neighborhood rather',
+    'than a proof of unconstrained global minimality. Minimatch and picomatch POSIX',
+    'mode compile `[!a]` to a negated character class; picomatch default mode emits',
+    '`!` as a literal class member.',
     '',
-    '## Structural minima',
+    '## Structural minima (reducer-canonical within structural class)',
     '',
     '| Type | Structural class | N | Pattern | Input | minimatch RegExp | picomatch default RegExp | picomatch POSIX RegExp |',
     '|---|---|---:|---|---|---|---|---|',
@@ -360,9 +960,11 @@ function renderMarkdown (report: DriftReport): string {
       `${code(group.witness.picomatchPosixRegex.source)} |`
     ),
     '',
-    '> The 294/294 POSIX convergence result covers this deterministic generated',
-    '> witness set. It is strong compiler-level evidence, not a proof over every',
-    '> possible glob pattern and candidate string.',
+    '> The 294/294 POSIX convergence result and 360/360 dialect partition cover',
+    '> this deterministic generated witness set, and witness minimality is certified',
+    '> relative to this reducer\'s candidate neighborhood (not globally minimal over',
+    '> all strings). Together they are strong compiler-level evidence, not a proof',
+    '> over every possible glob pattern and candidate string.',
     '>',
     '> The Type II label describes the specified layered architecture. It is a',
     '> consistency/policy-enforcement risk, not by itself a claim that either',
@@ -372,16 +974,53 @@ function renderMarkdown (report: DriftReport): string {
   return lines.join('\n')
 }
 
+function renderJson (
+  report: DriftReport,
+  { includeWitnesses = false }: { includeWitnesses?: boolean } = {}
+): string {
+  const payload = includeWitnesses
+    ? report
+    : {
+        name: report.name,
+        target: report.target,
+        checked: report.checked,
+        sourceDisagreements: report.sourceDisagreements,
+        bracketWitnesses: report.bracketWitnesses,
+        matrix: report.matrix,
+        sharedOptionsMatrix: report.sharedOptionsMatrix,
+        disagreementPartition: report.disagreementPartition,
+        shrinkSummary: report.shrinkSummary,
+        minimalWitnesses: report.minimalWitnesses,
+        structuralMinima: report.structuralMinima,
+      }
+
+  return JSON.stringify(payload, null, 2)
+}
+
 module.exports = {
+  SHARED_OPTION_PROFILES,
   buildReport,
   classifyDrift,
+  evaluateSharedOptionMatrix,
   ingestDifferentialWitnesses,
   minimalByDrift,
   minimalByStructure,
+  partitionSourceDisagreements,
+  renderJson,
   renderMarkdown,
+  resolveEffectiveOptions,
+  shrinkRouteWitness,
   structuralPatternClass,
 }
 
 if (require.main === module) {
-  console.log(renderMarkdown(buildReport()))
+  const args = new Set(process.argv.slice(2))
+  const report = buildReport()
+  if (args.has('--json-full')) {
+    console.log(renderJson(report, { includeWitnesses: true }))
+  } else if (args.has('--json')) {
+    console.log(renderJson(report))
+  } else {
+    console.log(renderMarkdown(report))
+  }
 }

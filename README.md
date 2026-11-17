@@ -18,11 +18,12 @@ The demo replays 40,000 seeded glob cases, shows the shortest observed Type I
 and Type II route-matching witnesses, exposes the compiled regular expressions,
 and verifies the `{ posix: true }` convergence result from live harness data.
 
-For the complete harness suite and detailed Markdown report:
+For the complete harness suite and detailed Markdown or compact JSON report:
 
 ```bash
 npm run verify
 npm run --silent glob:middleware
+npm run --silent glob:middleware:json
 ```
 
 Every generator uses a seeded xorshift32. Results reproduce exactly instead of
@@ -137,10 +138,15 @@ router/static-resolver layer. It reads the generated witnesses directly from
 | default options | 0 | 190 | 104 | 294 |
 | `{ posix: true }` | 294 | 0 | 0 | 294 |
 
-The deterministic selector groups witnesses by path-segment count and the
-positions containing `[!…]`, producing 17 structural groups. The shortest
-observed witness in each drift direction has a combined pattern/input length
-of five:
+A deterministic, predicate-preserving shrinker reduces every generated
+bracket-negation witness while holding its drift classification, POSIX
+convergence, and matcher option state invariant. Across all 294 generated
+bracket-negation witnesses (`190` Type I and `104` Type II), reduction reaches
+the same reducer-canonical pattern (`[!a]`, combined length five)—certified
+1-minimal relative to this reducer's candidate neighborhood (which directly
+proposes `[!a]`, `a`, and `b` alongside deletions, so this is not a claim of
+unconstrained global minimality)—and each of the 17 structural placement groups
+is likewise reduced within its structural class:
 
 | Type | Pattern | Input | minimatch RegExp | picomatch default RegExp | picomatch POSIX RegExp |
 |---|---|---|---|---|---|
@@ -149,9 +155,18 @@ of five:
 
 The compiler output makes the root cause visible: minimatch and picomatch
 POSIX mode emit a negated character class, while picomatch default mode treats
-`!` as a literal class member. The 294/294 convergence result is exhaustive for
-this deterministic generated witness set; it is not a proof over every possible
-glob pattern and candidate string.
+`!` as a literal class member. Replaying all six genuinely comparable shared
+flags (`dot`, `nocase`, `nobrace`, `noglobstar`, `noext`, `nonegate`) against
+each witness's recorded `dot` state preserves `294/294` agreement under
+`{ posix: true }`—with `dot: false`, `nobrace`, `noglobstar`, and the combined
+all-flags profile actively altering match decisions on this corpus, while
+`dot: true`, `nocase`, `noext`, and `nonegate` serve as `0/294`-change
+non-regression checks on the lowercase, non-extglob, non-negated generator
+output (targeted interactions are covered in `test/glob-shrink.test.ts`).
+Picomatch `{ strictSlashes: true }` resolves all `66/66` remaining
+trailing-`/**` dialect disagreements (`360/360` combined). These results are
+exhaustive for this deterministic generated witness set, not a universal proof
+over every possible glob pattern and candidate string.
 
 - **Type I:** the minimatch policy matches, but the picomatch resolver rejects.
 - **Type II:** the minimatch policy does not match a restricted-route rule,
