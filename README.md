@@ -14,6 +14,8 @@ npm ci
 npm run demo
 ```
 
+![Terminal output of Glasshouse's 30-line route-policy drift demonstration (minimatch@10.2.6 vs picomatch@4.0.5, seed 3). Step 1 replays 40,000 pattern/path pairs and isolates 294 bracket-negation disagreements. Step 2 shows shared rule [!a]: Type I input b matches minimatch policy and fails default picomatch; Type II input a fails minimatch policy and matches default picomatch. Step 3 shows compiled regular expressions: minimatch emits ^(?!\.)[^a]$, picomatch default emits ^(?:(?:\[!a\]|[!a])\/?)$, and picomatch POSIX emits ^(?:[^a/]\/?)$. Step 4 shows default options produce 190 Type I + 104 Type II = 294 drift, while { posix: true } produces 294/294 agreement and 0 drift across the generated witness set, with a scope note stating this is not a universal proof or vulnerability claim.](./assets/glob-route-drift-demo.svg)
+
 The demo replays 40,000 seeded glob cases, shows the shortest observed Type I
 and Type II route-matching witnesses, exposes the compiled regular expressions,
 and verifies the `{ posix: true }` convergence result from live harness data.
@@ -186,8 +188,10 @@ npm run test:middleware
 
 Kept deliberately, because a hunt log that only lists hits is worthless.
 
-Raw anomalies produced across the evening: **roughly 450. Real defects: 3.
-Novel defects: 0.** The great majority of that noise was self-inflicted:
+Raw anomalies produced across the evening: **roughly 450. Upstream-tracked
+behaviors surfaced: 3** (one open correctness defect, one open/contested
+default, and one adjudicated expected behavior). **Novel defects: 0.** The
+great majority of that noise was self-inflicted:
 
 - **22 false `simplifyRange` findings.** The harness passed `simplifyRange` a
   pre-filtered list containing only *matching* versions, then compared the result
@@ -231,8 +235,9 @@ under my direction on 2026-08-03. The middleware projection, compiler X-ray,
 TypeScript suite, and demo were developed with Codex, with Gemini contributing
 research and sequencing ideas. Rather than ask you to trust the agents or the
 narrative: every result is reproducible with `npm run verify`, every generator
-is seeded, and the upstream links are available for adjudication. The defects
-belong to the people who reported them first, named and linked above.
+is seeded, and the upstream links are available for adjudication. Credit for
+the upstream issues belongs to the people who reported them first, named and
+linked above.
 
-MIT licensed. Nothing here is a security vulnerability; all three are correctness
-defects, all three are already public, and no disclosure embargo applies.
+MIT licensed. Nothing here is a security vulnerability; every surfaced behavior
+is already public in upstream issue trackers, and no disclosure embargo applies.
