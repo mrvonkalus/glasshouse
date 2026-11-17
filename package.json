@@ -6,6 +6,7 @@
     "build": "tsc -p tsconfig.json",
     "build:middleware": "npm run build --silent",
     "demo": "npm run build --silent && node .build/demo/glob-route-drift.js",
+    "demo:svg": "npm run build --silent && node .build/demo/render-demo-svg.js",
     "glob:middleware": "npm run build --silent && node .build/harnesses/glob-middleware-drift.js",
     "glob:middleware:json": "npm run build --silent && node .build/harnesses/glob-middleware-drift.js --json",
     "test": "npm run build --silent && node --test .build/test/*.test.js",

@@ -40,3 +40,8 @@ jobs:
         run: npm run --silent demo
         env:
           NO_COLOR: "1"
+
+      - name: Verify demo SVG freshness
+        run: |
+          npm run demo:svg
+          git diff --exit-code -- assets/glob-route-drift-demo.svg

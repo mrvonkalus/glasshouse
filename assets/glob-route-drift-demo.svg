@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="740" height="704" viewBox="0 0 740 704" role="img" aria-labelledby="glasshouse-demo-title glasshouse-demo-desc">
+  <title id="glasshouse-demo-title">Glasshouse route-policy drift terminal demonstration</title>
+  <desc id="glasshouse-demo-desc">Terminal output of Glasshouse&apos;s 30-line route-policy drift demonstration (minimatch@10.2.6 vs picomatch@4.0.5, seed 3). Step 1 replays 40,000 pattern/path pairs and isolates 294 bracket-negation disagreements. Step 2 shows minimized witnesses for shared rule [!a]: Type I input b matches minimatch policy and fails default picomatch; Type II input a fails minimatch policy and matches default picomatch. Step 3 shows compiled regular expressions: minimatch emits ^(?!\.)[^a]$, picomatch default emits ^(?:(?:\[!a\]|[!a])\/?)$, and picomatch POSIX emits ^(?:[^a/]\/?)$. Step 4 verifies convergence: default options produce 190 Type I + 104 Type II = 294 drift, while { posix: true } produces 294/294 agreement and 0 drift across the generated witness set, with a scope note stating this is not a universal proof or vulnerability claim.</desc>
+  <rect x="0.5" y="0.5" width="739" height="703" rx="12" fill="#0d1117" stroke="#30363d"/>
+  <path d="M12.5 0.5 H727.5 A12 12 0 0 1 739.5 12.5 V40 H0.5 V12.5 A12 12 0 0 1 12.5 0.5 Z" fill="#161b22"/>
+  <line x1="0.5" y1="40" x2="739.5" y2="40" stroke="#30363d"/>
+  <g aria-hidden="true">
+    <circle cx="22" cy="20" r="6" fill="#ff5f56"/>
+    <circle cx="42" cy="20" r="6" fill="#ffbd2e"/>
+    <circle cx="62" cy="20" r="6" fill="#27c93f"/>
+    <text x="370" y="25" text-anchor="middle" font-family="'SFMono-Regular', 'DejaVu Sans Mono', Consolas, 'Liberation Mono', Menlo, monospace" font-size="12" fill="#8b949e">npm run demo</text>
+  </g>
+  <g font-family="'SFMono-Regular', 'DejaVu Sans Mono', Consolas, 'Liberation Mono', Menlo, monospace" font-size="14" fill="#e6edf3" xml:space="preserve" style="white-space: pre">
+    <text x="28" y="68"><tspan fill="#56d4dd" font-weight="700">GLASSHOUSE // ROUTE-POLICY DRIFT</tspan></text>
+    <text x="28" y="89"><tspan fill="#8b949e">deterministic differential test · minimatch@10.2.6 vs picomatch@4.0.5 · seed 3</tspan></text>
+    <text x="28" y="131"><tspan fill="#56d4dd" font-weight="700">1  GENERATE</tspan></text>
+    <text x="28" y="152"><tspan>   </tspan><tspan font-weight="700">40,000</tspan><tspan> pattern/path pairs replayed</tspan></text>
+    <text x="28" y="173"><tspan>   </tspan><tspan font-weight="700">294</tspan><tspan> bracket-negation disagreements isolated</tspan></text>
+    <text x="28" y="215"><tspan fill="#56d4dd" font-weight="700">2  MINIMIZED WITNESSES</tspan></text>
+    <text x="28" y="236"><tspan>   shared rule       </tspan><tspan fill="#e3b341">[!a]</tspan></text>
+    <text x="28" y="257"><tspan>   Type I  input </tspan><tspan font-weight="700">b</tspan><tspan>   policy </tspan><tspan fill="#3fb950">MATCH</tspan><tspan>  →  resolver </tspan><tspan fill="#ff7b72">NO MATCH</tspan></text>
+    <text x="28" y="278"><tspan>   Type II input </tspan><tspan font-weight="700">a</tspan><tspan>   policy </tspan><tspan fill="#ff7b72">NO MATCH</tspan><tspan>  →  resolver </tspan><tspan fill="#3fb950">MATCH</tspan></text>
+    <text x="28" y="320"><tspan>   </tspan><tspan fill="#d2a8ff">Type II route simulation</tspan></text>
+    <text x="28" y="341"><tspan>   restricted rule does not fire  →  downstream resolver selects </tspan><tspan font-weight="700">a</tspan></text>
+    <text x="28" y="383"><tspan fill="#56d4dd" font-weight="700">3  COMPILER X-RAY</tspan></text>
+    <text x="28" y="404"><tspan>   minimatch          ^(?!\.)[^a]$</tspan></text>
+    <text x="28" y="425"><tspan>   picomatch default  ^(?:(?:\[!a\]|[!a])\/?)$</tspan></text>
+    <text x="28" y="446"><tspan>   picomatch POSIX    ^(?:[^a/]\/?)$</tspan></text>
+    <text x="28" y="488"><tspan>   default mode treats </tspan><tspan fill="#e3b341">!</tspan><tspan> as a literal class member;</tspan></text>
+    <text x="28" y="509"><tspan>   POSIX mode compiles </tspan><tspan fill="#e3b341">[!a]</tspan><tspan> as a negated character class.</tspan></text>
+    <text x="28" y="551"><tspan fill="#56d4dd" font-weight="700">4  VERIFY CONVERGENCE</tspan></text>
+    <text x="28" y="572"><tspan>   default options    </tspan><tspan font-weight="700">190</tspan><tspan> Type I + </tspan><tspan font-weight="700">104</tspan><tspan> Type II = </tspan><tspan fill="#ff7b72">294 drift</tspan></text>
+    <text x="28" y="593"><tspan>   { posix: true }    </tspan><tspan fill="#3fb950">294/294 agree · 0 drift</tspan></text>
+    <text x="28" y="635"><tspan fill="#3fb950" font-weight="700">VERDICT  Same rule. Same input. Different decisions—made reproducible.</tspan></text>
+    <text x="28" y="656"><tspan fill="#8b949e">Scope: deterministic generated witness set only.</tspan></text>
+    <text x="28" y="677"><tspan fill="#8b949e">       Not a universal proof or vulnerability claim.</tspan></text>
+  </g>
+</svg>

@@ -12,7 +12,7 @@ issue tracker before claiming anything.**
 | 2 | `fast-json-patch` 3.1.1 | silent wrong patch on scalar document roots | Weak — out of declared type contract (`Object \| Array`); all nested cases pass | Not pursued |
 | 3 | `semver` 7.8.5 | `subset()` false-positive: prerelease `eq` + differing bound ⇒ `true` for any superset | **Yes** | **No** — [PR #889](https://github.com/npm/node-semver/pull/889), filed 2026-07-23, open |
 | 4 | `semver` 7.8.5 | `ltr` and `gtr` both `true` on a non-empty range | Yes, but | **No** — [#328](https://github.com/npm/node-semver/issues/328), closed 2023 as expected prerelease behavior |
-| 5 | `picomatch` 4.0.5 | POSIX bracket negation `[!a]` inverted by default vs minimatch/bash | **Yes** | **No** — [#187](https://github.com/micromatch/picomatch/issues/187), [#180](https://github.com/micromatch/picomatch/issues/180), [#188](https://github.com/micromatch/picomatch/issues/188), all open |
+| 5 | `picomatch` 4.0.5 | POSIX bracket negation `[!a]` inverted by default vs minimatch/bash | **Yes** | **No** — [#187](https://github.com/micromatch/picomatch/issues/187) (open on 2026-08-03; closed 2026-08-24 by merged [PR #196](https://github.com/micromatch/picomatch/pull/196), unreleased on npm through `4.0.7`); [#180](https://github.com/micromatch/picomatch/pull/180), [#188](https://github.com/micromatch/picomatch/pull/188) (closed unmerged) |
 
 ## Own errors caught and discarded
 

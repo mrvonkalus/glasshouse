@@ -13,8 +13,9 @@
 // documented design rather than by defect. Including them floods the output with
 // ~400 non-findings -- which is exactly what happened on the first run here.
 //
-// FINDING IS NOT NOVEL -- see README. Already reported on picomatch as
-// issues #187, #180 and #188 (all open). Rediscovered independently.
+// FINDING IS NOT NOVEL -- see README. Reported on picomatch as #187 (#180 and
+// #188 closed as superseded); fixed on upstream master in PR #196, unreleased
+// on npm through picomatch@4.0.7. Rediscovered independently on 4.0.5.
 
 const { minimatch } = require('minimatch')
 const picomatch = require('picomatch')
@@ -89,7 +90,7 @@ function run ({ seed = 3, cases = 20000 } = {}) {
     checked,
     findings,
     bracketNegationShare: `${bracket.length}/${findings.length}`,
-    upstream: 'https://github.com/micromatch/picomatch/issues/187 (open)',
+    upstream: 'https://github.com/micromatch/picomatch/pull/196 (merged on master, closing #187; unreleased through 4.0.7)',
     novel: false,
   }
 }

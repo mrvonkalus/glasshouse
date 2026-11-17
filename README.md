@@ -14,9 +14,11 @@ npm ci
 npm run demo
 ```
 
-The demo replays 40,000 seeded glob cases, shows the shortest observed Type I
-and Type II route-matching witnesses, exposes the compiled regular expressions,
-and verifies the `{ posix: true }` convergence result from live harness data.
+![Glasshouse terminal demonstration comparing minimatch@10.2.6 and picomatch@4.0.5 across 40,000 seeded glob cases (seed 3): 294 bracket-negation disagreements reduce to minimized witnesses b and a against rule [!a], expose contrasting compiled regular expressions, and reach 294/294 agreement under { posix: true } across the generated witness set.](./assets/glob-route-drift-demo.svg)
+
+The demo replays 40,000 seeded glob cases, shows the minimized Type I and
+Type II route-matching witnesses, exposes the compiled regular expressions, and
+verifies `{ posix: true }` convergence from live harness data.
 
 For the complete harness suite and detailed Markdown or compact JSON report:
 
@@ -33,13 +35,14 @@ depending on a lucky fuzzing run.
 
 **None of the findings are claimed as novel.** Tracker searches happened after
 the independent finds. The repository currently contains one open correctness
-defect, one open/contested matcher behavior, one adjudicated semver behavior,
-and two clean harnesses:
+defect, one matcher defect fixed on upstream `master` (unreleased on npm
+through `picomatch@4.0.7`; reproduced here on pinned `4.0.5`), one adjudicated
+semver behavior, and two clean harnesses:
 
 | Observation | Status | Upstream |
 |---|---|---|
 | `semver.subset()` returns `true` for provably disjoint ranges | Open correctness defect | [node-semver PR #889](https://github.com/npm/node-semver/pull/889) |
-| Picomatch default and POSIX bracket negation diverge | Open, contested default behavior | [picomatch #187](https://github.com/micromatch/picomatch/issues/187), [#180](https://github.com/micromatch/picomatch/issues/180), [#188](https://github.com/micromatch/picomatch/issues/188) |
+| Picomatch default and POSIX bracket negation diverge | Fixed on upstream `master`; unreleased on npm (`4.0.5`–`4.0.7`) | [picomatch PR #196](https://github.com/micromatch/picomatch/pull/196) (merged), [#187](https://github.com/micromatch/picomatch/issues/187) (closed), [#180](https://github.com/micromatch/picomatch/pull/180), [#188](https://github.com/micromatch/picomatch/pull/188) (closed unmerged) |
 | `semver` `ltr` and `gtr` both return `true` for an excluded prerelease | Expected behavior | [node-semver #328](https://github.com/npm/node-semver/issues/328) |
 | Semver range invariants | Clean | No new finding |
 | jsdiff round-trip invariants | Clean across 80,000 generated cases | No finding |
@@ -122,9 +125,15 @@ picomatch  "[^a]"  ->  /^(?:[^a\/]\/?)$/
 `[^a]` is translated to a negated JS class. `[!a]` is emitted **raw** — and
 JavaScript negates with `^`, not `!`, so JS reads `[!a]` as "the literal
 characters `!` or `a`", the inverse of the POSIX/bash meaning. Affects every
-position in a pattern, not only the leading one. `{ posix: true }` produces
-correct behaviour, which is why this is a contested default rather than a
-straightforward break — hence three open issues arguing about it.
+position in a pattern, not only the leading one. On released versions through
+`picomatch@4.0.7` (pinned here at `4.0.5`), `{ posix: true }` restores POSIX
+bracket negation; upstream later merged
+[PR #196](https://github.com/micromatch/picomatch/pull/196) onto `master` to
+translate `[!...]` by default (closing
+[#187](https://github.com/micromatch/picomatch/issues/187) and superseding
+[#180](https://github.com/micromatch/picomatch/pull/180) and
+[#188](https://github.com/micromatch/picomatch/pull/188)), though that fix is
+not yet published to npm.
 
 ### Downstream route-matching consistency
 
@@ -186,8 +195,11 @@ npm run test:middleware
 
 Kept deliberately, because a hunt log that only lists hits is worthless.
 
-Raw anomalies produced across the evening: **roughly 450. Real defects: 3.
-Novel defects: 0.** The great majority of that noise was self-inflicted:
+Raw anomalies produced across the evening: **roughly 450. Upstream-tracked
+behaviors surfaced: 3** (one open correctness defect, one matcher defect since
+fixed on upstream `master` via PR #196 but unreleased on npm, and one
+adjudicated expected behavior). **Novel defects: 0.** The great majority of
+that noise was self-inflicted:
 
 - **22 false `simplifyRange` findings.** The harness passed `simplifyRange` a
   pre-filtered list containing only *matching* versions, then compared the result
@@ -206,9 +218,10 @@ Novel defects: 0.** The great majority of that noise was self-inflicted:
 - **`t.plan(cases.length + 1)`** needed to be `+ 2`. Same.
 
 Of the 360 surviving glob disagreements, only the 294 involving `[!` are tied to
-picomatch #187. The other 66 are mostly globstar and trailing-path semantics that
-these libraries are documented to treat differently, and are **not** claimed as
-defects here.
+picomatch [#187](https://github.com/micromatch/picomatch/issues/187) (fixed on
+upstream `master` in [PR #196](https://github.com/micromatch/picomatch/pull/196)).
+The other 66 are mostly globstar and trailing-path semantics that these libraries
+are documented to treat differently, and are **not** claimed as defects here.
 
 ---
 
@@ -231,8 +244,10 @@ under my direction on 2026-08-03. The middleware projection, compiler X-ray,
 TypeScript suite, and demo were developed with Codex, with Gemini contributing
 research and sequencing ideas. Rather than ask you to trust the agents or the
 narrative: every result is reproducible with `npm run verify`, every generator
-is seeded, and the upstream links are available for adjudication. The defects
-belong to the people who reported them first, named and linked above.
+is seeded, and the upstream links are available for adjudication. Credit for
+the upstream issues belongs to the people who reported them first, named and
+linked above.
 
-MIT licensed. Nothing here is a security vulnerability; all three are correctness
-defects, all three are already public, and no disclosure embargo applies.
+MIT licensed. Nothing here is a security vulnerability; every claimed defect or
+contested behavior is documented in the linked upstream trackers, and no
+disclosure embargo applies.
