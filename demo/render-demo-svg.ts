@@ -48,19 +48,27 @@ const { renderDemo } = require('./glob-route-drift') as {
   renderDemo: (report: DemoReport, options?: { color?: boolean }) => string
 }
 
-const DEMO_ALT_TEXT =
+const README_ALT_TEXT =
+  'Glasshouse terminal demonstration comparing minimatch@10.2.6 and ' +
+  'picomatch@4.0.5 across 40,000 seeded glob cases (seed 3): 294 ' +
+  'bracket-negation disagreements reduce to minimized witnesses b and a ' +
+  'against rule [!a], expose contrasting compiled regular expressions, ' +
+  'and reach 294/294 agreement under { posix: true } across the generated ' +
+  'witness set.'
+
+const SVG_DESC_TEXT =
   'Terminal output of Glasshouse\'s 30-line route-policy drift demonstration ' +
   '(minimatch@10.2.6 vs picomatch@4.0.5, seed 3). Step 1 replays 40,000 ' +
   'pattern/path pairs and isolates 294 bracket-negation disagreements. ' +
-  'Step 2 shows shared rule [!a]: Type I input b matches minimatch policy ' +
-  'and fails default picomatch; Type II input a fails minimatch policy and ' +
-  'matches default picomatch. Step 3 shows compiled regular expressions: ' +
-  'minimatch emits ^(?!\\.)[^a]$, picomatch default emits ' +
-  '^(?:(?:\\[!a\\]|[!a])\\/?)$, and picomatch POSIX emits ^(?:[^a/]\\/?)$. ' +
-  'Step 4 shows default options produce 190 Type I + 104 Type II = 294 ' +
-  'drift, while { posix: true } produces 294/294 agreement and 0 drift ' +
-  'across the generated witness set, with a scope note stating this is not ' +
-  'a universal proof or vulnerability claim.'
+  'Step 2 shows minimized witnesses for shared rule [!a]: Type I input b ' +
+  'matches minimatch policy and fails default picomatch; Type II input a ' +
+  'fails minimatch policy and matches default picomatch. Step 3 shows ' +
+  'compiled regular expressions: minimatch emits ^(?!\\.)[^a]$, picomatch ' +
+  'default emits ^(?:(?:\\[!a\\]|[!a])\\/?)$, and picomatch POSIX emits ' +
+  '^(?:[^a/]\\/?)$. Step 4 verifies convergence: default options produce ' +
+  '190 Type I + 104 Type II = 294 drift, while { posix: true } produces ' +
+  '294/294 agreement and 0 drift across the generated witness set, with a ' +
+  'scope note stating this is not a universal proof or vulnerability claim.'
 
 const PALETTE = {
   background: '#0d1117',
@@ -239,7 +247,7 @@ function renderDemoSvg (report: DemoReport): string {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${SVG_WIDTH}" height="${svgHeight}" viewBox="0 0 ${SVG_WIDTH} ${svgHeight}" role="img" aria-labelledby="glasshouse-demo-title glasshouse-demo-desc">`,
     '  <title id="glasshouse-demo-title">Glasshouse route-policy drift terminal demonstration</title>',
-    `  <desc id="glasshouse-demo-desc">${escapeXml(DEMO_ALT_TEXT)}</desc>`,
+    `  <desc id="glasshouse-demo-desc">${escapeXml(SVG_DESC_TEXT)}</desc>`,
     `  <rect x="0.5" y="0.5" width="${SVG_WIDTH - 1}" height="${svgHeight - 1}" rx="12" fill="${PALETTE.background}" stroke="${PALETTE.border}"/>`,
     `  <path d="M12.5 0.5 H${SVG_WIDTH - 12.5} A12 12 0 0 1 ${SVG_WIDTH - 0.5} 12.5 V${HEADER_HEIGHT} H0.5 V12.5 A12 12 0 0 1 12.5 0.5 Z" fill="${PALETTE.headerBackground}"/>`,
     `  <line x1="0.5" y1="${HEADER_HEIGHT}" x2="${SVG_WIDTH - 0.5}" y2="${HEADER_HEIGHT}" stroke="${PALETTE.border}"/>`,
@@ -269,7 +277,8 @@ const DEFAULT_SVG_OUTPUT_PATH = path.join(
 
 module.exports = {
   DEFAULT_SVG_OUTPUT_PATH,
-  DEMO_ALT_TEXT,
+  README_ALT_TEXT,
+  SVG_DESC_TEXT,
   escapeXml,
   parseAnsiLine,
   renderDemoSvg,
